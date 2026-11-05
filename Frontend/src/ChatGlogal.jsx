@@ -47,10 +47,12 @@ function getInitials(nickname) {
 }
 
 function getMessageTime(createdAt) {
+  const timestamp = new Date(createdAt)
+  if (Number.isNaN(timestamp.getTime())) return 'Hora no disponible'
   return new Intl.DateTimeFormat('es-MX', {
     hour: '2-digit',
     minute: '2-digit',
-  }).format(new Date(createdAt))
+  }).format(timestamp)
 }
 
 function getAvatarColor(nickname) {
@@ -67,6 +69,8 @@ function ChatGlobal() {
   const [connectionStatus, setConnectionStatus] = useState('connecting')
   const [isSending, setIsSending] = useState(false)
   const messageListRef = useRef(null)
+  const shouldStickToBottomRef = useRef(true)
+  const [showNewMessages, setShowNewMessages] = useState(false)
 
   useEffect(() => {
     const stream = new EventSource(`${chatUrl}/stream`)
@@ -78,13 +82,23 @@ function ChatGlobal() {
     stream.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data)
+        if (!message || !['string', 'number'].includes(typeof message.id) ||
+            typeof message.nickname !== 'string' || typeof message.text !== 'string' ||
+            !Number.isFinite(Date.parse(message.createdAt))) {
+          throw new Error('Formato de mensaje inválido')
+        }
+        const messageList = messageListRef.current
+        const isNearBottom = !messageList ||
+          messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 110
+        shouldStickToBottomRef.current = isNearBottom
+        if (!isNearBottom) setShowNewMessages(true)
         setMessages((currentMessages) => {
           if (currentMessages.some((currentMessage) => currentMessage.id === message.id)) {
             return currentMessages
           }
-          return [...currentMessages, message].sort(
-            (first, second) => new Date(first.createdAt) - new Date(second.createdAt),
-          )
+          return [...currentMessages, message]
+            .sort((first, second) => new Date(first.createdAt) - new Date(second.createdAt))
+            .slice(-500)
         })
       } catch (error) {
         console.error('No se pudo interpretar un mensaje recibido del chat.', error)
@@ -97,7 +111,9 @@ function ChatGlobal() {
 
   useEffect(() => {
     const messageList = messageListRef.current
-    messageList?.scrollTo({ top: messageList.scrollHeight, behavior: 'smooth' })
+    if (messageList && shouldStickToBottomRef.current) {
+      messageList.scrollTo({ top: messageList.scrollHeight, behavior: 'auto' })
+    }
   }, [messages])
 
   useEffect(() => {
@@ -193,7 +209,7 @@ function ChatGlobal() {
               <span className="gc-demo-icon" aria-hidden="true">i</span>
               <p>
                 Estás como <strong>{nickname}</strong>. No pedimos registro ni datos personales.
-                Los mensajes son visibles para todas y se programan para eliminarse después de 24 horas.
+                Los mensajes son públicos. Evita compartir datos personales o información que te identifique.
               </p>
             </div>
 
@@ -202,8 +218,14 @@ function ChatGlobal() {
               aria-live="polite"
               aria-label="Mensajes del chat global"
               ref={messageListRef}
+              onScroll={(event) => {
+                const list = event.currentTarget
+                const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 110
+                shouldStickToBottomRef.current = nearBottom
+                if (nearBottom) setShowNewMessages(false)
+              }}
             >
-              <div className="gc-day-divider"><span>Conversación reciente · 24 horas</span></div>
+              <div className="gc-day-divider"><span>Conversación reciente</span></div>
               <div className="gc-welcome">
                 <span className="gc-welcome-icon" aria-hidden="true">☀</span>
                 <div>
@@ -251,6 +273,21 @@ function ChatGlobal() {
               })}
             </div>
 
+            {showNewMessages && (
+              <button
+                type="button"
+                className="gc-new-messages"
+                onClick={() => {
+                  const list = messageListRef.current
+                  shouldStickToBottomRef.current = true
+                  list?.scrollTo({ top: list.scrollHeight, behavior: 'smooth' })
+                  setShowNewMessages(false)
+                }}
+              >
+                Ver mensajes nuevos ↓
+              </button>
+            )}
+
             <form className="gc-composer" onSubmit={sendMessage}>
               <label className="gc-sr-only" htmlFor="gc-message-input">Escribe tu mensaje</label>
               <textarea
@@ -261,7 +298,7 @@ function ChatGlobal() {
                   if (notice) setNotice('')
                 }}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
+                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                     event.preventDefault()
                     event.currentTarget.form.requestSubmit()
                   }
