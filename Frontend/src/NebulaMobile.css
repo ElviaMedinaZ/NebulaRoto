@@ -1,0 +1,290 @@
+
+/* Base compartida: anchuras, zoom, contenido largo y accesibilidad. */
+.nebula-app { min-width: 0; }
+.nebula-app :where(img, video, iframe, svg) { max-width: 100%; }
+.nebula-app :where(p, h1, h2, h3, h4, a, button, label) { overflow-wrap: break-word; }
+.nebula-app :where(input, select, textarea) { max-width: 100%; }
+.nebula-app :where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--primary-light, #7c3aed);
+  outline-offset: 3px;
+}
+.nebula-app :where(.page-shell, .page-section, .container, .info-card, .report-modal, .assessment-modal) { min-width: 0; }
+.nebula-app :where(.page-header, .hero-section, .advantages-section, .quick-actions-section, .about-section, .process-section, .skills-section, .cta-contact-section, .report-lookup-section) { scroll-margin-top: 78px; }
+
+/* Tablet: evita columnas estrechas en secciones con mucho texto. */
+@media (max-width: 1024px) {
+  .nebula-app .ai-workspace-grid,
+  .nebula-app .ai-hero-content { min-width: 0; }
+  .nebula-app .info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nebula-app .admin-resource-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nebula-app .admin-resource-manager-heading { flex-wrap: wrap; align-items: flex-start; }
+  .nebula-app .admin-option-card { min-width: 0; }
+}
+
+@media (max-width: 768px) {
+  /* Portada y secciones informativas */
+  .nebula-app .container { width: 100%; max-width: 100%; padding-inline: 16px; }
+  .nebula-app .page-section { padding-block: 32px 48px; }
+  .nebula-app .page-header { padding-block: 38px 28px; }
+  .nebula-app .page-header h1 { font-size: clamp(1.9rem, 7.2vw, 2.5rem); line-height: 1.2; }
+  .nebula-app .hero-content,
+  .nebula-app .about-grid,
+  .nebula-app .contacts-info-grid,
+  .nebula-app .report-lookup-grid,
+  .nebula-app .ai-workspace-grid,
+  .nebula-app .ai-hero-content { grid-template-columns: minmax(0, 1fr); }
+  .nebula-app .hero-visual { min-height: 0; }
+  .nebula-app .assessment-preview-card { width: 100%; max-width: 100%; }
+  .nebula-app .hero-buttons { align-items: stretch; }
+  .nebula-app .hero-buttons button { width: 100%; min-height: 48px; }
+  .nebula-app .advantages-grid,
+  .nebula-app .quick-actions-grid,
+  .nebula-app .process-steps,
+  .nebula-app .skills-grid,
+  .nebula-app .info-grid,
+  .nebula-app .footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+  .nebula-app .advantage-card,
+  .nebula-app .quick-action-card,
+  .nebula-app .info-card,
+  .nebula-app .service-card { min-width: 0; }
+  .nebula-app .quick-action-media { min-height: 105px; }
+  .nebula-app .violentometro-details-grid { grid-template-columns: minmax(0,1fr); }
+  .nebula-app .violentometro-conducts,
+  .nebula-app .violentometro-recommendation { padding: 20px 18px; }
+  .nebula-app .report-lookup-card,
+  .nebula-app .report-create-card { min-width: 0; }
+  .nebula-app .contact-form .form-group { grid-template-columns: 1fr; }
+  .nebula-app .map-wrapper iframe { width: 100%; }
+
+  /* Autoevaluación: cuadro de diálogo cómodo con scroll interno */
+  .nebula-app .assessment-modal-backdrop,
+  .nebula-app .report-modal-backdrop { padding: 0; place-items: end center; align-items: end; overflow: hidden; }
+  .nebula-app .assessment-modal,
+  .nebula-app .assessment-result-modal,
+  .nebula-app .report-modal,
+  .nebula-app .lookup-modal {
+    width: 100%; max-width: 100%;
+    max-height: 94vh; max-height: 94dvh;
+    overflow-x: hidden; overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 20px 20px 0 0;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+  }
+  .nebula-app .assessment-modal-header,
+  .nebula-app .report-modal-heading { gap: 12px; }
+  .nebula-app .assessment-question { overflow-wrap: anywhere; }
+  .nebula-app .assessment-options { gap: 10px; }
+  .nebula-app .assessment-option {
+    min-height: 50px; padding: 13px 14px;
+    text-align: left; touch-action: manipulation;
+  }
+  .nebula-app .assessment-modal-footer,
+  .nebula-app .assessment-result-actions,
+  .nebula-app .report-confirmation { min-width: 0; }
+  .nebula-app .assessment-modal-footer { gap: 10px; flex-wrap: wrap; }
+  .nebula-app .assessment-continue,
+  .nebula-app .assessment-exit,
+  .nebula-app .report-submit-button,
+  .nebula-app .report-modal-close { min-height: 44px; }
+  .nebula-app .report-form input,
+  .nebula-app .report-form select,
+  .nebula-app .report-form textarea,
+  .nebula-app .lookup-form input,
+  .nebula-app .lookup-form select,
+  .nebula-app .lookup-form textarea { font-size: 16px; }
+  .nebula-app .report-reference { overflow-wrap: anywhere; word-break: break-word; }
+  .nebula-app .report-confirmation { text-align: center; }
+
+  /* Centros, líneas de ayuda y socios */
+  .nebula-app .partners-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-inline: 0; }
+  .nebula-app .partner-card { width: 100%; max-width: 100%; aspect-ratio: auto; min-height: 225px; }
+  .nebula-app .partner-card img { width: 100%; height: 145px; object-fit: cover; }
+  .nebula-app .partner-card-content { min-width: 0; padding: 13px; }
+  .nebula-app .partner-card-content h3 { overflow-wrap: anywhere; }
+  .nebula-app .help-center-card .card-icon { height: 160px; }
+  .nebula-app .info-card a[href^='tel:'],
+  .nebula-app .help-center-card a[href^='tel:'],
+  .nebula-app .info-card .card-cta { min-height: 44px; display: inline-flex; align-items: center; }
+
+  /* Chat global, incluso cuando el teclado ocupa parte de la pantalla. */
+  .nebula-app .gc-container { width: 100%; max-width: 100%; padding-inline: 12px; }
+  .nebula-app .gc-intro-content { padding-block: 24px; }
+  .nebula-app .gc-layout { grid-template-columns: minmax(0,1fr); }
+  .nebula-app .gc-conversation { min-width: 0; overflow: clip; }
+  .nebula-app .gc-room-header { gap: 9px; padding: 12px; }
+  .nebula-app .gc-room-tag { max-width: 128px; }
+  .nebula-app .gc-message-list {
+    min-height: 260px;
+    max-height: 530px;
+    max-height: clamp(270px, calc(100dvh - 350px), 530px);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: auto;
+  }
+  .nebula-app .gc-message-body { min-width: 0; }
+  .nebula-app .gc-message-bubble { font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
+  .nebula-app .gc-message-meta { flex-wrap: wrap; gap: 3px 9px; }
+  .nebula-app .gc-composer { margin: 0 12px 12px; }
+  .nebula-app .gc-composer textarea { font-size: 16px; line-height: 1.45; min-height: 44px; }
+  .nebula-app .gc-send-button { min-height: 44px; min-width: 70px; font-size: 0.875rem; }
+  .nebula-app .gc-composer-footer > span { font-size: 0.77rem; line-height: 1.5; }
+  .nebula-app .gc-guidelines { margin-top: 5px; }
+  .nebula-app .gc-guideline-list { grid-template-columns: minmax(0,1fr); }
+  .nebula-app .gc-help-card a,
+  .nebula-app .gc-emergency a { display: inline-flex; align-items: center; min-height: 44px; }
+
+  /* Asistente Kara / @n8n/chat: el textarea y los mensajes necesitan altura útil. */
+  .nebula-app .ai-hero-content { gap: 18px; }
+  .nebula-app .ai-hero-avatar { width: clamp(95px, 24vw, 145px); height: auto; max-width: 100%; }
+  .nebula-app .ai-chat-column { padding: 14px; }
+  .nebula-app .ai-chat-heading { align-items: flex-start; flex-wrap: wrap; }
+  .nebula-app .ai-chat-container {
+    height: 68vh; height: clamp(360px, calc(100dvh - 235px), 670px);
+    min-height: 360px; width: 100%;
+    border-radius: 13px; overflow: hidden;
+  }
+  .nebula-app .ai-chat-container :where(input, textarea) { font-size: 16px; }
+  .nebula-app .ai-support-card { padding: 19px 16px; }
+  .nebula-app .ai-emergency-note a { min-height: 44px; display: inline-flex; align-items: center; }
+
+  /* Administración: recursos, colaboradores, solicitudes y reportes */
+  .nebula-app .admin-resource-manager-heading { display: flex; flex-direction: column; align-items: flex-start; gap: 13px; }
+  .nebula-app .admin-resource-form-grid,
+  .nebula-app .admin-resource-groups,
+  .nebula-app .admin-orientation-request-list,
+  .nebula-app .admin-anonymous-report-list { grid-template-columns: minmax(0, 1fr); }
+  .nebula-app .admin-resource-form-wide { grid-column: 1 / -1; }
+  .nebula-app .admin-resource-form :where(input,select,textarea),
+  .nebula-app .admin-edit-modal :where(input,select,textarea),
+  .nebula-app .admin-anonymous-report-status select { font-size: 16px; min-height: 44px; }
+  .nebula-app .admin-resource-actions,
+  .nebula-app .admin-edit-modal-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .nebula-app .admin-resource-actions button,
+  .nebula-app .admin-resource-back,
+  .nebula-app .admin-resource-edit,
+  .nebula-app .admin-resource-delete,
+  .nebula-app .admin-resource-submit,
+  .nebula-app .admin-resource-cancel,
+  .nebula-app .admin-edit-modal-close { min-height: 44px; }
+  .nebula-app .admin-resource-details,
+  .nebula-app .admin-orientation-request,
+  .nebula-app .admin-anonymous-report { min-width: 0; overflow-wrap: anywhere; }
+  .nebula-app .admin-edit-modal-backdrop { padding: 0; align-items: end; }
+  .nebula-app .admin-edit-modal {
+    width: 100%; max-width: 100%;
+    max-height: 93vh; max-height: 93dvh;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden; overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .nebula-app .admin-login-page { grid-template-columns: minmax(0,1fr); min-height: auto; }
+  .nebula-app .admin-login-visual { min-height: 0; padding: 25px 20px; }
+  .nebula-app .admin-login-orbit { display: none; }
+  .nebula-app .admin-login-form-section { min-width: 0; padding: 24px 18px; }
+  .nebula-app .admin-login-form-wrap { width: 100%; max-width: 520px; }
+  .nebula-app .admin-login-form :where(input,select,textarea) { font-size: 16px; min-height: 44px; }
+  .nebula-app .admin-login-submit { min-height: 48px; }
+
+  /* Todos los iframes de recursos (PDF, vídeo, mapas) sin desbordar la pantalla. */
+  .nebula-app :where(.map-wrapper, .resource-preview, .orientation-preview, .resource-media, .preview-frame) iframe {
+    display: block; width: 100%; max-width: 100%;
+    max-height: 68dvh;
+  }
+  .nebula-app :where(.resource-modal, .orientation-modal, .resource-preview-modal) {
+    max-width: calc(100vw - 16px);
+    max-height: 92vh; max-height: 92dvh;
+    overflow-x: hidden; overflow-y: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .nebula-app .container { padding-inline: 13px; }
+  .nebula-app .page-section { padding-block: 28px 42px; }
+  .nebula-app .advantages-grid,
+  .nebula-app .quick-actions-grid,
+  .nebula-app .process-steps,
+  .nebula-app .skills-grid,
+  .nebula-app .info-grid,
+  .nebula-app .footer-grid { grid-template-columns: minmax(0,1fr); }
+  .nebula-app .hero-section { padding-top: 30px; }
+  .nebula-app .hero-copy h1 { font-size: clamp(1.9rem, 8.5vw, 2.45rem); }
+  .nebula-app .hero-copy p { font-size: 0.98rem; }
+  .nebula-app .hero-visual { min-height: 0; }
+  .nebula-app .mobile-shortcuts-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+  .nebula-app .mobile-shortcuts-grid button { min-height: 100px; }
+  .nebula-app .partner-card { width: 100%; }
+  .nebula-app .partners-grid { grid-template-columns: minmax(0,1fr); }
+  .nebula-app .partner-card img { height: clamp(145px, 42vw, 225px); }
+  .nebula-app .help-center-card .card-icon { height: 165px; }
+  .nebula-app .gc-intro-art { display: none; }
+  .nebula-app .gc-room-header { padding: 12px 10px; }
+  .nebula-app .gc-room-tag { max-width: 106px; }
+  .nebula-app .gc-message-list { padding: 15px 10px 17px; }
+  .nebula-app .gc-message-body { max-width: calc(100% - 40px); }
+  .nebula-app .gc-message-meta strong { font-size: 0.75rem; }
+  .nebula-app .gc-message-bubble { font-size: 0.875rem; }
+  .nebula-app .gc-demo-notice { font-size: 0.8rem; }
+  .nebula-app .gc-welcome p { font-size: 0.8rem; }
+  .nebula-app .gc-composer { margin: 0 9px 10px; }
+  .nebula-app .gc-composer-footer { align-items: center; }
+  .nebula-app .gc-composer-footer > span { max-width: none; font-size: 0.75rem; }
+  .nebula-app .gc-send-button { min-height: 44px; }
+  .nebula-app .gc-guideline-list { display: flex; }
+  .nebula-app .ai-chat-container { min-height: 345px; }
+  .nebula-app .ai-chat-column { padding: 12px; }
+  .nebula-app .admin-resource-actions,
+  .nebula-app .admin-edit-modal-actions { flex-direction: column; align-items: stretch; }
+  .nebula-app .admin-resource-actions button,
+  .nebula-app .admin-edit-modal-actions button { width: 100%; }
+  .nebula-app .admin-orientation-request-heading,
+  .nebula-app .admin-anonymous-report-heading { flex-wrap: wrap; }
+}
+
+@media (max-width: 360px) {
+  .nebula-app .container { padding-inline: 10px; }
+  .nebula-app .mobile-shortcuts-grid button { padding: 12px 10px; font-size: 0.85rem; }
+  .nebula-app .gc-room-avatar { flex: 0 0 34px; width: 34px; height: 34px; }
+  .nebula-app .gc-room-title h2 { font-size: 0.98rem; }
+  .nebula-app .gc-avatar { flex: 0 0 29px; width: 29px; height: 29px; }
+  .nebula-app .gc-message { gap: 5px; }
+}
+
+/* Adaptaciones a pantallas giradas y dispositivos con poco alto. */
+@media (max-height: 560px) and (max-width: 900px) {
+  .nebula-app .assessment-modal,
+  .nebula-app .report-modal,
+  .nebula-app .admin-edit-modal { max-height: 98vh; max-height: 98dvh; }
+  .nebula-app .gc-message-list { max-height: 280px; }
+  .nebula-app .ai-chat-container { height: 74vh; height: 74dvh; min-height: 250px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nebula-app, .nebula-app *, .nebula-app *::before, .nebula-app *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .nebula-app .header-ai,
+  .nebula-app .panic-button,
+  .nebula-app .mobile-nav,
+  .nebula-app .mobile-menu-scrim,
+  .nebula-app .mobile-quick-exit,
+  .nebula-app .mobile-menu-toggle { display: none !important; }
+}
+
+/* Botón de nuevos mensajes: se muestra solo cuando la usuaria dejó de seguir el final del chat. */
+.nebula-app .gc-new-messages {
+  display: block; margin: 0 auto 8px; min-height: 44px; padding: 8px 16px;
+  border: 1px solid var(--border-color); border-radius: 999px;
+  background: var(--bg-white); color: var(--primary-color);
+  box-shadow: var(--shadow-card); font: inherit; font-weight: 700;
+  cursor: pointer;
+}
+.nebula-app .gc-new-messages:focus-visible { outline: 3px solid var(--primary-light); outline-offset: 2px; }

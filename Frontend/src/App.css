@@ -4141,3 +4141,312 @@ h2 {
 :root[data-theme='dark'] .btn-primary:hover {
   background: #765b8a;
 }
+
+/* =============================================================
+   NEB-MOV-14 · Portada y navegación móvil
+   Solo estilos nuevos; escritorio conserva sus reglas originales.
+   ============================================================= */
+.mobile-menu-toggle,
+.mobile-quick-exit,
+.mobile-nav,
+.mobile-menu-scrim,
+.mobile-shortcuts,
+.mobile-help-button {
+  display: none;
+}
+
+/* Reglas de foco para las nuevas acciones */
+.mobile-menu-toggle:focus-visible,
+.mobile-quick-exit:focus-visible,
+.mobile-nav-link:focus-visible,
+.mobile-shortcuts button:focus-visible {
+  outline: 3px solid var(--primary-light);
+  outline-offset: 3px;
+}
+
+@media (max-width: 768px) {
+  /* La navegación horizontal existente se sustituye únicamente en móviles. */
+  .header-container {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-rows: 1fr;
+    min-height: 64px;
+    gap: 8px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .header-container > .logo {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    font-size: clamp(0.95rem, 3.7vw, 1.25rem);
+    letter-spacing: 0.04em;
+  }
+
+  .header-container > .nav,
+  .header-container > .header-report-button {
+    display: none;
+  }
+
+  .mobile-quick-exit,
+  .mobile-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    gap: 6px;
+    border-radius: 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.15;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .mobile-quick-exit {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-white);
+    color: var(--text-main);
+  }
+
+  .mobile-menu-toggle {
+    grid-column: 3;
+    grid-row: 1;
+    padding: 8px 11px;
+    border: 1px solid var(--primary-color);
+    background: var(--primary-color);
+    color: #fff;
+    cursor: pointer;
+  }
+
+  .mobile-menu-toggle span:first-child {
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  .mobile-nav:not([hidden]) {
+    display: block;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    z-index: 2;
+    overflow-y: auto;
+    max-height: calc(100vh - 64px);
+    max-height: calc(100dvh - 64px - env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-white);
+    box-shadow: 0 20px 38px rgba(25, 19, 31, 0.18);
+    overscroll-behavior: contain;
+  }
+
+  .mobile-nav-inner {
+    display: grid;
+    width: min(100%, 560px);
+    gap: 2px;
+    margin: 0 auto;
+    padding: 14px 20px max(22px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-nav-heading {
+    margin-top: 12px;
+    padding: 9px 12px 4px;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .mobile-nav-link {
+    display: flex;
+    width: 100%;
+    min-height: 44px;
+    align-items: center;
+    padding: 10px 13px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-main);
+    font-size: 0.93rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .mobile-nav-link:active,
+  .mobile-nav-link:hover {
+    background: var(--primary-soft);
+    color: var(--primary-color);
+  }
+
+  .mobile-menu-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    width: 100%;
+    border: 0;
+    background: rgba(24, 20, 29, 0.38);
+    cursor: default;
+  }
+
+  /* Kara se mantiene accesible, pero no ocupa 128px ni tapa los campos de chat. */
+  .header-ai {
+    position: fixed;
+    top: auto;
+    right: auto;
+    bottom: max(14px, env(safe-area-inset-bottom, 0px));
+    left: max(12px, env(safe-area-inset-left, 0px));
+    z-index: 900;
+    transform: none;
+  }
+
+  .header-ai .ai-message {
+    display: none;
+  }
+
+  .header-ai .ai-evaluation-button {
+    display: grid;
+    width: 54px;
+    height: 54px;
+    place-items: center;
+    border: 1px solid var(--border-color);
+    background: var(--bg-white);
+    box-shadow: 0 8px 22px rgba(39, 24, 57, 0.22);
+    animation: none;
+  }
+
+  .header-ai .ai-evaluation-button img {
+    width: 52px;
+    height: 52px;
+  }
+
+  /* Ocultar el flotante en el propio chat, en menús y durante diálogos. */
+  .nebula-app[data-page='modulos'] .header-ai,
+  .nebula-app[data-menu-open='true'] .header-ai,
+  .nebula-app[data-dialog-open='true'] .header-ai {
+    display: none;
+  }
+
+  /* La salida fija de escritorio se reemplaza por el acceso discreto superior. */
+  .panic-button {
+    display: none;
+  }
+
+  .hero-section {
+    padding-top: 40px;
+    padding-bottom: 30px;
+  }
+
+  .hero-copy {
+    max-width: 640px;
+  }
+
+  .hero-copy h1 {
+    font-size: clamp(1.85rem, 7.4vw, 2.35rem);
+    line-height: 1.14;
+  }
+
+  .hero-copy p {
+    font-size: 1rem;
+  }
+
+  .hero-buttons .desktop-about-button {
+    display: none;
+  }
+
+  .hero-buttons .mobile-help-button {
+    display: inline-flex;
+  }
+
+  .mobile-shortcuts {
+    display: block;
+    width: 100%;
+    padding: 10px 0 6px;
+    background: transparent;
+  }
+
+  .mobile-shortcuts h2 {
+    margin-bottom: 14px;
+    color: var(--text-main);
+    font-size: 1.2rem;
+  }
+
+  .mobile-shortcuts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .mobile-shortcuts-grid button {
+    display: flex;
+    min-width: 0;
+    min-height: 100px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 16px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    background: var(--bg-white);
+    color: var(--text-main);
+    font-size: 0.92rem;
+    font-weight: 650;
+    text-align: left;
+    line-height: 1.3;
+    box-shadow: var(--shadow-card);
+    cursor: pointer;
+  }
+
+  .mobile-shortcuts-grid button span {
+    color: var(--primary-color);
+    font-size: 1.4rem;
+  }
+
+  .mobile-shortcuts-grid button:hover {
+    border-color: var(--primary-light);
+  }
+}
+
+@media (max-width: 360px) {
+  .header-container {
+    gap: 5px;
+  }
+
+  .logo-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .mobile-quick-exit,
+  .mobile-menu-toggle {
+    padding: 8px 7px;
+    font-size: 0.74rem;
+  }
+
+  .mobile-shortcuts-grid {
+    gap: 8px;
+  }
+
+  .mobile-shortcuts-grid button {
+    padding: 13px 11px;
+    font-size: 0.85rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-nav-link,
+  .mobile-shortcuts-grid button,
+  .header-ai .ai-evaluation-button {
+    animation: none;
+    transition: none;
+  }
+}
