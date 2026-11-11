@@ -9,6 +9,7 @@ const answers = [
   { label: 'Prefiero no responder', score: null },
 ]
 
+//probar cambios :D
 // Reactivos clasificados con tipo de violencia según Mapeo de reactivos.pdf
 const questions = [
   {
