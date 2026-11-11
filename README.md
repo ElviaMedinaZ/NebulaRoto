@@ -21,12 +21,12 @@ Nebula es una plataforma web de orientación y prevención de la violencia contr
 
 El repositorio contiene una aplicación frontend React/Vite y una API Express. La autenticación administrativa está implementada y utiliza MongoDB; requiere que Atlas sea accesible y que las variables de entorno estén configuradas. La API informa un estado degradado si la base de datos no está disponible.
 
-Las secciones informativas, el cuestionario y el asistente están disponibles desde la interfaz. Los reportes anónimos ya se guardan en MongoDB, generan un folio para consultar su avance y pueden gestionarse desde el panel administrativo. Las métricas y otras tarjetas del panel que no tienen una vista de gestión siguen siendo demostrativas. La autoevaluación es orientativa y no sustituye atención profesional. El destino del botón de salida rápida debe revisarse antes de publicar el sitio.
+Las secciones informativas, el cuestionario y el asistente están disponibles desde la interfaz. Los reportes anónimos ya se guardan en MongoDB, generan un folio para consultar su avance y pueden gestionarse desde el panel administrativo. La vista de estadísticas del panel consulta en MongoDB los totales de autoevaluaciones completadas, reportes y socios; las incidencias se derivan de las categorías y el nivel que devuelve cada autoevaluación, sin guardar respuestas ni identidades. El Violentómetro registra únicamente los cambios de nivel que selecciona una persona y los presenta como consultas, no como detecciones de riesgo. Los gráficos cuentan datos registrados desde la incorporación de estas métricas; las demás métricas que no tienen una vista de gestión siguen siendo demostrativas. La autoevaluación es orientativa y no sustituye atención profesional. El destino del botón de salida rápida debe revisarse antes de publicar el sitio.
 
 ## Funciones disponibles
 
 - **Inicio y navegación:** portada con accesos a las secciones principales. La navegación interna utiliza fragmentos de URL, por ejemplo `#centros` o `#ia`.
-- **Autoevaluación:** diálogo con los 15 reactivos del mapeo, ponderados por nivel (Advertencia, Reacción y Peligro). Las respuestas positivas priorizan reactivos relacionados; el resultado conserva las conductas identificadas y muestra una puntuación normalizada orientativa.
+- **Autoevaluación:** diálogo con los 15 reactivos del mapeo, ponderados por nivel (Advertencia, Reacción y Peligro). Las respuestas positivas priorizan reactivos relacionados; el resultado conserva las conductas identificadas y muestra una puntuación normalizada orientativa. Al finalizar, registra en MongoDB el conteo, las categorías detectadas y el nivel general, sin almacenar respuestas ni datos personales.
 - **Líneas de escucha:** información de orientación y canales de atención.
 - **Centros de ayuda:** directorio y mapa de recursos de apoyo.
 - **Chat global:** conversación anónima en tiempo real con mensajes temporales.
@@ -35,8 +35,8 @@ Las secciones informativas, el cuestionario y el asistente están disponibles de
 - **Chat global anónimo:** sala pública en tiempo real, con alias aleatorio temporal y mensajes guardados en MongoDB por un máximo de 24 horas.
 - **Socios:** directorio público de organizaciones colaboradoras, agrupado por tipo y persistido en MongoDB; el panel administrativo permite agregar colaboradores y eliminarlos.
 - **Reportes anónimos:** formulario sin cuenta que guarda tipo de violencia, lugar, descripción y evidencia opcional en MongoDB; genera un folio aleatorio que permite consultar únicamente el estado y la fecha de actualización. El panel administrativo permite revisar los datos, descargar evidencia, cambiar el estado y eliminar reportes.
-- **Administración:** registro limitado a correos autorizados por el backend, inicio de sesión contra MongoDB, validación de sesión al abrir el panel y cierre de sesión. Las contraseñas se almacenan con hash bcrypt y la sesión se conserva en una cookie `HttpOnly`.
-- **Panel administrativo:** gestión de recursos de orientación, colaboradores, solicitudes de orientación y reportes anónimos guardados en MongoDB; los administradores pueden consultar, actualizar o eliminar los datos según el módulo. Las demás tarjetas del panel son demostrativas.
+- **Administración:** registro público de cuentas con rol `usuario` por defecto, inicio de sesión contra MongoDB, validación de sesión al abrir el panel y cierre de sesión. `carlos@nebula.com` recibe el rol administrador al iniciar sesión y no se puede degradar ni eliminar desde el panel. Las contraseñas se almacenan con hash bcrypt y la sesión se conserva en una cookie `HttpOnly`.
+- **Panel administrativo:** gestión de recursos de orientación, colaboradores, solicitudes de orientación y reportes anónimos guardados en MongoDB; los administradores pueden consultar, actualizar o eliminar los datos según el módulo. La vista de estadísticas muestra en vivo los totales, la incidencia por categoría de autoevaluación y el conteo de niveles consultados en el Violentómetro.
 - **Reportes:** formularios visuales de creación de reportes anónimos y consulta por folio; todavía no se envían ni recuperan desde la API.
 - **Preferencia de tema:** alternancia entre modo claro y oscuro, guardada localmente en el navegador.
 
@@ -83,15 +83,16 @@ La API escucha en el puerto `3000` por defecto (se puede cambiar con `PORT`) y q
 Para habilitar el acceso administrativo, configura en `Backend/.env`:
 
 - `JWT_SECRET`: una clave aleatoria de al menos 32 caracteres; no la compartas ni la incluyas en el frontend.
-- `ADMIN_EMAILS`: lista separada por comas de los correos autorizados para crear cuentas administrativas.
 - `FRONTEND_URL`: orígenes adicionales autorizados, separados por comas. Los orígenes locales (`localhost`) y las direcciones IPv4 privadas de la LAN en los puertos `5173` y `8080` se autorizan automáticamente para facilitar las pruebas en la red local. En producción, indica aquí el origen exacto del sitio.
 - En producción, configura `NODE_ENV=production`, sirve el sitio mediante HTTPS y usa dominios del mismo sitio para frontend y API, de modo que el navegador envíe la cookie `Secure` con `SameSite=Lax`.
+
+El registro público acepta cualquier correo electrónico válido y crea cuentas con rol `usuario`. Los permisos institucionales y administrativos se pueden asignar desde la gestión de cuentas; `ADMIN_EMAILS` no se utiliza.
 
 Los recursos de orientación y la red de colaboradores se inicializan en MongoDB con los datos actuales en el primer arranque que encuentra cada colección vacía. La API los ofrece públicamente en `GET /api/resources` y `GET /api/partners`; agregar, editar y eliminar elementos requiere una sesión administrativa.
 
 Puedes generar `JWT_SECRET` desde `Backend/` con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` y copiar el resultado directamente a `Backend/.env`.
 
-El frontend usa automáticamente el mismo nombre de host desde el que se abrió la página para llamar a la API por el puerto `3000`. Para desarrollo, Vite escucha en todas las interfaces y la API autoriza orígenes IPv4 privados de la LAN en los puertos `5173` y `8080`. `VITE_API_URL` es opcional y solo debe configurarse si la API está en un host distinto.
+Por ahora, el frontend llama directamente a la API local en `http://<host-del-frontend>:3000`, tanto en desarrollo como en builds. Para probar en la misma computadora, inicia el backend en el puerto `3000` y abre el frontend localmente. Para usarlo desde otra computadora, inicia el backend en el equipo anfitrión y abre el frontend usando la IP de ese equipo; Vite escucha en todas las interfaces y la API autoriza orígenes IPv4 privados de la LAN en los puertos `5173` y `8080`. Esta configuración temporal no usa la API de Render.
 
 ### Acceso desde otras computadoras de la red local
 
@@ -188,7 +189,7 @@ La API se conecta a MongoDB mediante `MONGODB_URI` (o `MONGO_URI`) del archivo `
 
 El chat global no requiere cuenta, correo ni nombre real. El navegador genera un alias aleatorio y lo conserva en `sessionStorage` durante esa sesión; el backend almacena únicamente el alias, el texto y las fechas de cada mensaje, sin crear perfiles ni asociar un identificador de usuaria. Los mensajes se actualizan en vivo mediante Server-Sent Events y MongoDB los elimina con un índice TTL al cumplir 24 horas. La eliminación TTL de MongoDB es automática, aunque el proceso de limpieza puede tardar un poco más de 24 horas; los mensajes vencidos no se entregan en el chat. Como medida antiabuso, el límite de 10 mensajes por minuto mantiene un contador temporal por IP en la memoria del proceso (no en MongoDB); los registros que mantenga el proveedor de alojamiento quedan fuera de la aplicación.
 
-Para probarlo, inicia MongoDB/API y el frontend, y configura `VITE_API_URL` si la API no está en `http://localhost:3000`. La opción de tema privado o anónimo no evita que una usuaria incluya información personal voluntariamente en un mensaje; la interfaz recomienda no compartirla.
+Para probarlo, inicia MongoDB/API local y el frontend. La opción de tema privado o anónimo no evita que una usuaria incluya información personal voluntariamente en un mensaje; la interfaz recomienda no compartirla.
 
 Con Docker Compose instalado y `Backend/.env` configurado, los servicios se pueden iniciar y detener desde la raíz del repositorio:
 
@@ -204,7 +205,7 @@ El frontend se publica en el puerto `8080` y la API en el `3000`, según el comp
 - No ingreses ni compartas datos personales o información que identifique a alguien en el chat ni en los reportes anónimos.
 - El chat transmite mensajes al workflow configurado en n8n; revisa sus controles de acceso, retención de datos y avisos de privacidad antes de usarlo con personas usuarias.
 - La autoevaluación se presenta solo como una reflexión orientativa. La herramienta no sustituye una valoración profesional y su cálculo requiere revisión antes de cualquier uso clínico o institucional.
-- Las cuentas administrativas solo se pueden registrar si su correo figura en `ADMIN_EMAILS`. Usa una contraseña única y mantén `JWT_SECRET` fuera del frontend y del control de versiones.
+- Cualquier persona puede crear una cuenta con rol `usuario` y correo válido. Las cuentas públicas no reciben permisos administrativos; mantén `JWT_SECRET` fuera del frontend y del control de versiones.
 - La sesión administrativa expira en ocho horas y se guarda en una cookie `HttpOnly`; en producción también requiere HTTPS para activar el atributo `Secure`.
 - La autenticación protege los datos y las operaciones administrativas de los reportes. La consulta pública por folio solo devuelve el estado y la fecha de actualización; conserva el folio en un lugar seguro, porque no existe recuperación si se pierde.
 - La evidencia opcional se limita a imágenes JPG, PNG o WEBP y archivos PDF de hasta 2 MB, y solo puede descargarse desde el panel autenticado. Define y comunica una política de retención y eliminación de reportes antes de usar el sistema en producción.

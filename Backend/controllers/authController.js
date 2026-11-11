@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const Admin = require("../models/Admin");
 
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
+const ADMIN_EMAIL = "carlos@nebula.com";
 
 // RESPALDO DE EMERGENCIA PARA JWT (El registro y validación de usuarios ahora vive en la base de datos)
 const FALLBACK_JWT_SECRET = "nebula_super_secret_jwt_key_security_2026_fallback";
@@ -33,7 +34,7 @@ function createSession(res, admin) {
   }
 
   const token = jwt.sign(
-    { sub: admin.id, email: admin.email, role: admin.role || "admin" },
+    { sub: admin.id, email: admin.email, role: getRole(admin) },
     secret,
     { expiresIn: "8h", issuer: "nebula-api", audience: "nebula-admin" }
   );
@@ -41,9 +42,8 @@ function createSession(res, admin) {
   res.cookie(COOKIE_NAME, token, { ...getCookieOptions(), maxAge: SESSION_DURATION_MS });
 }
 
-// Expone solo los datos de perfil que el cliente necesita, nunca el hash de contraseña.
-function publicAdmin(admin) {
-  return { id: admin.id, nombre: admin.nombre, email: admin.email, role: admin.role || "admin" };
+function getRole(admin) {
+  return admin.email?.toLowerCase() === ADMIN_EMAIL ? "admin" : (admin.role || "usuario");
 }
 
 // Aplica los límites de longitud requeridos por bcrypt para la contraseña.
@@ -53,7 +53,7 @@ function validPassword(password) {
     && Buffer.byteLength(password, "utf8") <= 72;
 }
 
-// Valida y registra una cuenta institucional directamente en la base de datos de Atlas.
+// Permite que cualquier persona registre una cuenta institucional.
 const registrar = async (req, res) => {
   const nombre = typeof req.body?.nombre === "string" ? req.body.nombre.trim() : "";
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
@@ -74,11 +74,6 @@ const registrar = async (req, res) => {
     return res.status(400).json({ mensaje: "Debes aceptar los términos de uso y privacidad." });
   }
 
-  // Validación de dominio institucional o permisos (opcional, ajusta según tus reglas @uabcs.mx)
-  // if (!email.endsWith("@uabcs.mx") && !email.endsWith("@nebula.com")) {
-  //   return res.status(403).json({ mensaje: "Solo se permiten correos institucionales autorizados." });
-  // }
-
   try {
     const activeSecret = process.env.JWT_SECRET || FALLBACK_JWT_SECRET;
     if (!activeSecret || activeSecret.length < 32) {
@@ -90,13 +85,13 @@ const registrar = async (req, res) => {
       nombre,
       email,
       passwordHash,
-      role: "admin", // Asigna el rol administrativo para su panel separado
+      role: "usuario",
       terminosAceptadosEn: new Date()
     });
 
     createSession(res, admin);
     return res.status(201).json({
-      mensaje: "Cuenta administrativa creada correctamente.",
+      mensaje: "Cuenta creada correctamente.",
       usuario: publicAdmin(admin)
     });
   } catch (error) {
@@ -106,7 +101,7 @@ const registrar = async (req, res) => {
     if (error.status === 503) {
       return res.status(error.status).json({ mensaje: error.message });
     }
-    console.error("No se pudo registrar la cuenta administrativa:", error);
+    console.error("No se pudo registrar la cuenta:", error);
     return res.status(500).json({ mensaje: "No se pudo completar el registro." });
   }
 };
@@ -137,6 +132,11 @@ const login = async (req, res) => {
       return res.status(401).json({ mensaje: "Correo o contraseña incorrectos." });
     }
 
+    if (admin.email?.toLowerCase() === ADMIN_EMAIL && admin.role !== "admin") {
+      await Admin.findByIdAndUpdate(admin.id, { $set: { role: "admin" } }, { runValidators: true });
+      admin.role = "admin";
+    }
+
     createSession(res, admin);
     return res.json({
       mensaje: "Inicio de sesión correcto.",
@@ -159,15 +159,18 @@ const sesion = async (req, res) => {
       return res.status(404).json({ mensaje: "Usuario no encontrado." });
     }
 
-    // CORRECCIÓN AUTOMÁTICA: Si el correo es admin@nebula.com, forzamos el rol de admin
-    const rolReal = usuario.email === 'admin@nebula.com' ? 'admin' : (usuario.role || 'institucional');
+    if (usuario.email?.toLowerCase() === ADMIN_EMAIL && usuario.role !== "admin") {
+      await Admin.findByIdAndUpdate(usuario.id, { $set: { role: "admin" } }, { runValidators: true });
+      usuario.role = "admin";
+    }
 
     return res.json({
       success: true,
       usuario: {
+        id: usuario.id,
         nombre: usuario.nombre,
         email: usuario.email,
-        role: rolReal
+        role: getRole(usuario)
       }
     });
   } catch (error) {
@@ -181,13 +184,13 @@ const logout = (_req, res) => {
   return res.status(200).json({ mensaje: "Sesión cerrada correctamente." });
 };
 
-module.exports = { registrar, login, sesion, logout, COOKIE_NAME };
+module.exports = { registrar, login, sesion, logout, COOKIE_NAME, ADMIN_EMAIL, getRole };
 
 function publicAdmin(admin) {
   return { 
     id: admin.id, 
     nombre: admin.nombre, 
     email: admin.email, 
-    role: admin.role || (admin.email === "admin@nebula.com" ? "admin" : "institucional") 
+    role: getRole(admin)
   };
 }

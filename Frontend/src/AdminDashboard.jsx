@@ -1,102 +1,172 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { API_URL } from './apiUrl.js'
+import { getOrientationRequests, deleteOrientationRequest } from './orientationRequestsApi.js'
+import Reportes from './Reportes.jsx'
 import './AdminDashboard.css';
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ onLogout }) {
   const [activeTab, setActiveTab] = useState('solicitudes');
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterUrgency, setFilterUrgency] = useState('todos');
-  const [selectedItem, setSelectedItem] = useState(null);
-
-  // Estados inicializados vacíos para llenarse con la base de datos real
   const [orientaciones, setOrientaciones] = useState([]);
-  const [reportes, setReportes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [deletingRequestId, setDeletingRequestId] = useState('');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [statistics, setStatistics] = useState(null);
+  const [statisticsLoading, setStatisticsLoading] = useState(false);
+  const [statisticsError, setStatisticsError] = useState(null);
+  const requestsLoaded = useRef(false);
+  const statisticsLoaded = useRef(false);
 
-  // 1. Cargar datos reales desde la Base de Datos al abrir el panel
   useEffect(() => {
-    const fetchRealData = async () => {
+    let isMounted = true;
+    const fetchSession = async () => {
       try {
-        setLoading(true);
-        
-        // Petición para solicitudes de orientación (ajusta la URL a tu ruta de backend)
-        const resOri = await fetch('http://localhost:4000/api/orientation-requests', {
-          credentials: 'include' // Necesario si manejas sesiones/cookies de admin
-        });
-        if (resOri.ok) {
-          const dataOri = await resOri.json();
-          setOrientaciones(dataOri);
-        }
-
-        // Petición para reportes anónimos (ajusta la URL a tu ruta de backend)
-        const resRep = await fetch('http://localhost:4000/api/reports', {
+        const response = await fetch(`${API_URL}/api/auth/me`, {
           credentials: 'include'
         });
-        if (resRep.ok) {
-          const dataRep = await resRep.json();
-          setReportes(dataRep);
+        const body = await response.text();
+        let result = null;
+        if (body) {
+          try {
+            result = JSON.parse(body);
+          } catch {
+            if (response.ok) throw new Error('El servidor devolvió una respuesta inválida.');
+          }
         }
-
-      } catch (err) {
-        console.error('Error al conectar con la base de datos:', err);
-        setError('No se pudo establecer conexión con el servidor.');
+        if (!response.ok || !result?.usuario) {
+          throw new Error(result?.mensaje || 'Inicia sesión para acceder al panel.');
+        }
+        if (isMounted) setCurrentUser(result.usuario);
+      } catch (sessionError) {
+        if (isMounted) setError(sessionError.message);
       } finally {
-        setLoading(false);
+        if (isMounted) setIsLoadingSession(false);
       }
     };
 
-    fetchRealData();
+    fetchSession();
+    return () => { isMounted = false; };
   }, []);
 
-  // 2. Función real para actualizar estados en la Base de Datos
-  const handleUpdateStatus = async (id, nuevoEstado) => {
-    try {
-      const endpoint = activeTab === 'solicitudes' 
-        ? `http://localhost:4000/api/orientation-requests/${id}` 
-        : `http://localhost:4000/api/reports/${id}`;
+  useEffect(() => {
+    if (!currentUser || !['admin', 'institucional'].includes(currentUser.role)
+      || requestsLoaded.current) return undefined;
 
-      // Petición al backend para actualizar en MongoDB
-      const response = await fetch(endpoint, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado: nuevoEstado }),
-        credentials: 'include'
+    let isActive = true;
+    getOrientationRequests()
+      .then((requests) => {
+        if (!Array.isArray(requests)) throw new Error('La respuesta de solicitudes no es válida.');
+        if (isActive) {
+          setOrientaciones(requests);
+          setError('');
+          requestsLoaded.current = true;
+        }
+      })
+      .catch((requestError) => {
+        if (isActive) setError(requestError.message);
+      })
+      .finally(() => {
+        if (isActive) setLoading(false);
       });
 
-      if (!response.ok) {
-        throw new Error('Error al actualizar en el servidor');
-      }
+    return () => { isActive = false; };
+  }, [activeTab, currentUser]);
 
-      // Actualizar estado localmente tras éxito en la BDD
-      if (activeTab === 'solicitudes') {
-        setOrientaciones(orientaciones.map(item => (item.id === id || item._id === id) ? { ...item, estado: nuevoEstado } : item));
-      } else {
-        setReportes(reportes.map(item => (item.id === id || item._id === id) ? { ...item, estado: nuevoEstado } : item));
-      }
+  useEffect(() => {
+    if (!currentUser || !['admin', 'institucional'].includes(currentUser.role)) return undefined;
 
-      if (selectedItem && (selectedItem.id === id || selectedItem._id === id)) {
-        setSelectedItem({ ...selectedItem, estado: nuevoEstado });
+    let isActive = true;
+    const fetchStatistics = async () => {
+      if (!statisticsLoaded.current) setStatisticsLoading(true);
+      try {
+        const response = await fetch(`${API_URL}/api/statistics/dashboard`, {
+          credentials: 'include'
+        });
+        const body = await response.text();
+        let data = null;
+        if (body) {
+          try {
+            data = JSON.parse(body);
+          } catch {
+            if (response.ok) throw new Error('El servidor devolvió una respuesta inválida.');
+          }
+        }
+        if (!response.ok) {
+          throw new Error(data?.mensaje || 'No se pudieron cargar las estadísticas.')
+        }
+        if (![data?.autoevaluaciones, data?.reportes, data?.socios]
+          .every((count) => Number.isSafeInteger(count) && count >= 0)) {
+          throw new Error('La respuesta de estadísticas del servidor no es válida.')
+        }
+        if (isActive) {
+          statisticsLoaded.current = true
+          setStatistics(data)
+          setStatisticsError(null)
+        }
+      } catch (statisticsFetchError) {
+        if (isActive) {
+          setStatisticsError(statisticsFetchError.message)
+        }
+      } finally {
+        if (isActive) setStatisticsLoading(false)
       }
+    }
 
-      alert('Estado actualizado correctamente en la base de datos.');
-    } catch (err) {
-      console.error(err);
-      alert('Hubo un error al actualizar el registro en el servidor.');
+    fetchStatistics()
+    const refreshInterval = window.setInterval(fetchStatistics, 30000)
+    return () => {
+      isActive = false
+      window.clearInterval(refreshInterval)
+    }
+  }, [currentUser]);
+
+  const handleDeleteRequest = async (request) => {
+    if (!window.confirm('¿Eliminar esta solicitud de orientación?')) return;
+    setDeletingRequestId(request._id);
+    setError('');
+    setNotice('');
+    try {
+      await deleteOrientationRequest(request._id);
+      setOrientaciones((current) => current.filter((item) => item._id !== request._id));
+      setNotice('Solicitud eliminada correctamente.');
+    } catch (deleteError) {
+      setError(deleteError.message);
+    } finally {
+      setDeletingRequestId('');
     }
   };
 
-  // Filtrado dinámico por buscador y urgencia
-  const dataList = activeTab === 'solicitudes' ? orientaciones : reportes;
-  const filteredData = dataList.filter(item => {
-    const matchesSearch = 
-      (item.id && item.id.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (item._id && item._id.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (item.tipo && item.tipo.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (item.detalle && item.detalle.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesUrgency = filterUrgency === 'todos' || item.urgencia === filterUrgency;
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    setError('');
+    try {
+      if (onLogout) {
+        await onLogout();
+        return;
+      }
+      const response = await fetch(`${API_URL}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('No se pudo cerrar la sesión.');
+      window.location.reload();
+    } catch (logoutError) {
+      setError(logoutError.message);
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
-    return matchesSearch && matchesUrgency;
+  const canAccessReviewQueues = ['admin', 'institucional'].includes(currentUser?.role);
+  const isAdministrator = currentUser?.role === 'admin';
+  const filteredRequests = orientaciones.filter((request) => {
+    const query = searchTerm.trim().toLowerCase();
+    return !query || [request.name, request.email, request.phone, request.message]
+      .some((value) => value?.toLowerCase().includes(query));
   });
 
   return (
@@ -109,38 +179,50 @@ export default function AdminDashboard() {
             <div className="admin-logo-icon">🔒</div>
             <div>
               <h1 className="admin-title">NEBULA</h1>
-              <span className="admin-badge">Panel Admin</span>
+              <span className="admin-badge">
+                {isLoadingSession ? 'Verificando sesión' : currentUser?.role === 'admin' ? 'Administrador' : 'Personal Institucional'}
+              </span>
             </div>
           </div>
 
           <nav className="admin-nav-menu">
-            <button
-              onClick={() => { setActiveTab('solicitudes'); setSelectedItem(null); }}
-              className={`admin-nav-btn ${activeTab === 'solicitudes' ? 'active' : ''}`}
-            >
-              <span>Solicitudes Orientación</span>
-            </button>
+            {canAccessReviewQueues && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('solicitudes')}
+                  className={`admin-nav-btn ${activeTab === 'solicitudes' ? 'active' : ''}`}
+                >
+                  <span>Solicitudes de Orientación</span>
+                </button>
 
-            <button
-              onClick={() => { setActiveTab('reportes'); setSelectedItem(null); }}
-              className={`admin-nav-btn ${activeTab === 'reportes' ? 'active' : ''}`}
-            >
-              <span>Reportes Anónimos</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reportes')}
+                  className={`admin-nav-btn ${activeTab === 'reportes' ? 'active' : ''}`}
+                >
+                  <span>Reportes Anónimos</span>
+                </button>
 
-            <button
-              onClick={() => { setActiveTab('estadisticas'); setSelectedItem(null); }}
-              className={`admin-nav-btn ${activeTab === 'estadisticas' ? 'active' : ''}`}
-            >
-              <span>Estadísticas y Tendencias</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('estadisticas')}
+                  className={`admin-nav-btn ${activeTab === 'estadisticas' ? 'active' : ''}`}
+                >
+                  <span>Estadísticas y Tendencias</span>
+                </button>
+              </>
+            )}
 
-            <button
-              onClick={() => { setActiveTab('gestion'); setSelectedItem(null); }}
-              className={`admin-nav-btn ${activeTab === 'gestion' ? 'active' : ''}`}
-            >
-              <span>Instituciones y Contenido</span>
-            </button>
+            {isAdministrator && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('gestion')}
+                className={`admin-nav-btn ${activeTab === 'gestion' ? 'active' : ''}`}
+              >
+                <span>Instituciones y Contenido</span>
+              </button>
+            )}
           </nav>
         </div>
 
@@ -148,15 +230,17 @@ export default function AdminDashboard() {
           <div className="admin-user-info">
             <div className="admin-avatar">AD</div>
             <div>
-              <p className="admin-user-name">Adm. Central</p>
+              <p className="admin-user-name">{currentUser?.nombre || 'Cuenta'}</p>
               <p className="admin-user-status">Sesión Segura</p>
             </div>
           </div>
           <button 
-            onClick={() => alert('Cierre de sesión seguro.')}
+            type="button"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
             className="admin-logout-btn"
           >
-            <span>Cerrar Sesión</span>
+            <span>{isLoggingOut ? 'Cerrando…' : 'Cerrar Sesión'}</span>
           </button>
         </div>
       </aside>
@@ -167,7 +251,8 @@ export default function AdminDashboard() {
         <header className="admin-header-bar">
           <div>
             <h2 className="admin-header-title">
-              {activeTab === 'solicitudes' && 'Gestión de Solicitudes de Orientación'}
+              {isLoadingSession ? 'Verificando permisos…' :
+                activeTab === 'solicitudes' && 'Gestión de Solicitudes de Orientación'}
               {activeTab === 'reportes' && 'Bandeja de Reportes Anónimos'}
               {activeTab === 'estadisticas' && 'Estadísticas Generales y Tendencias'}
               {activeTab === 'gestion' && 'Gestión de Instituciones Aliadas y Contenidos'}
@@ -181,111 +266,93 @@ export default function AdminDashboard() {
         </header>
 
         <div className="admin-body-container">
-          
-          {/* Tarjetas de Resumen Métricas */}
-          <div className="metrics-cards-grid">
-            <div className="metric-box">
-              <span className="metric-box-title">Solicitudes Totales</span>
-              <div className="metric-box-content">
-                <span className="metric-box-number">{orientaciones.length}</span>
-                <span className="metric-box-tag positive">Base de Datos</span>
+          {isLoadingSession ? (
+            <section className="admin-access-denied" role="status">
+              <h3>Verificando acceso</h3>
+              <p>Estamos comprobando los permisos de tu cuenta.</p>
+            </section>
+          ) : !canAccessReviewQueues ? (
+            <section className="admin-access-denied" role="alert">
+              <h3>{error || 'No tienes permisos para acceder a los recursos'}</h3>
+              <p>Este panel está disponible para administradores y personal institucional.</p>
+            </section>
+          ) : (
+            <>
+              <div className="metrics-cards-grid">
+                {[
+                  ['Solicitudes Totales', loading ? '…' : orientaciones.length],
+                  ['Reportes Anónimos', statistics?.reportes],
+                  ['Evaluaciones Procesadas', statistics?.autoevaluaciones],
+                  ['Instituciones Activas', statistics?.socios],
+                ].map(([label, count]) => (
+                  <div className="metric-box" key={label}>
+                    <span className="metric-box-title">{label}</span>
+                    <div className="metric-box-content">
+                      <span className="metric-box-number">
+                        {count === undefined ? (statisticsLoading ? '…' : '—') : count.toLocaleString('es-MX')}
+                      </span>
+                      <span className="metric-box-tag">Base de datos</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
 
-            <div className="metric-box">
-              <span className="metric-box-title">Reportes Anónimos</span>
-              <div className="metric-box-content">
-                <span className="metric-box-number">{reportes.length}</span>
-                <span className="metric-box-tag urgent">Registrados</span>
-              </div>
-            </div>
-
-            <div className="metric-box">
-              <span className="metric-box-title">Evaluaciones Procesadas</span>
-              <div className="metric-box-content">
-                <span className="metric-box-number">2,850</span>
-                <span className="metric-box-tag positive">+8% este mes</span>
-              </div>
-            </div>
-
-            <div className="metric-box">
-              <span className="metric-box-title">Instituciones Activas</span>
-              <div className="metric-box-content">
-                <span className="metric-box-number">18</span>
-                <span className="metric-box-tag">Red Aliada</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Sección Interactiva según Pestaña */}
-          {activeTab === 'solicitudes' || activeTab === 'reportes' ? (
+          {activeTab === 'solicitudes' ? (
             <div className="admin-card-section">
-              
               <div className="admin-filters-bar">
                 <div className="admin-search-wrapper">
                   <input
                     type="text"
-                    placeholder="Buscar por ID, tipo o detalle..."
+                    placeholder="Buscar por nombre, correo, teléfono o mensaje..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="admin-search-input"
                   />
                 </div>
-
-                <div className="admin-filter-group">
-                  <span>Urgencia:</span>
-                  <select
-                    value={filterUrgency}
-                    onChange={(e) => setFilterUrgency(e.target.value)}
-                    className="admin-select"
-                  >
-                    <option value="todos">Todos</option>
-                    <option value="Alta">Alta / Urgente</option>
-                    <option value="Media">Media</option>
-                    <option value="Baja">Baja</option>
-                  </select>
-                </div>
               </div>
 
+              {error && <p className="admin-dashboard-error" role="alert">{error}</p>}
+              {notice && <p className="statistics-error" role="status">{notice}</p>}
+
               {loading ? (
-                <p style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>Cargando registros desde la base de datos...</p>
-              ) : filteredData.length === 0 ? (
-                <p style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>No se encontraron registros en la base de datos.</p>
+                <p style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>Cargando solicitudes desde la base de datos...</p>
+              ) : filteredRequests.length === 0 ? (
+                <p style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>No se encontraron solicitudes.</p>
               ) : (
                 <div className="table-responsive">
                   <table className="admin-data-table">
                     <thead>
                       <tr>
-                        <th>ID</th>
+                        <th>Nombre / Alias</th>
                         <th>Fecha</th>
-                        <th>Tipo</th>
-                        <th>Urgencia</th>
-                        <th>Estado</th>
-                        <th className="text-right">Acciones</th>
+                        <th>Correo</th>
+                        <th>Teléfono</th>
+                        <th>Mensaje</th>
+                        <th>Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredData.map((item) => (
-                        <tr key={item.id || item._id}>
-                          <td className="font-mono text-purple">{item.id || item._id.slice(-6)}</td>
-                          <td>{item.fecha ? item.fecha.split('T')[0] : 'Reciente'}</td>
-                          <td className="font-medium">{item.tipo}</td>
-                          <td>
-                            <span className={`badge-urgency ${(item.urgencia || 'baja').toLowerCase()}`}>
-                              {item.urgencia}
-                            </span>
-                          </td>
-                          <td>
-                            <span className={`badge-status ${(item.estado || 'pendiente').toLowerCase().replace(' ', '-')}`}>
-                              {item.estado}
-                            </span>
-                          </td>
-                          <td className="text-right">
-                            <button
-                              onClick={() => setSelectedItem(item)}
-                              className="action-btn-review"
+                      {filteredRequests.map((request) => (
+                        <tr key={request._id}>
+                          <td className="font-medium text-white">{request.name || 'Anónimo'}</td>
+                          <td>{new Date(request.createdAt).toLocaleDateString('es-MX')}</td>
+                          <td><a href={`mailto:${request.email}`} className="text-purple">{request.email}</a></td>
+                          <td>{request.phone ? <a href={`tel:${request.phone}`}>{request.phone}</a> : 'N/D'}</td>
+                          <td>{request.message}</td>
+                          <td className="text-right" style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                            <a
+                              href={`mailto:${request.email}?subject=${encodeURIComponent('Respuesta a su solicitud de orientación - NEBULA')}&body=${encodeURIComponent(`Estimado/a ${request.name || 'Usuario/a'},\n\nHemos recibido su solicitud de orientación enviada a través del sistema NEBULA:\n"${request.message}"\n\nNos ponemos en contacto con usted para brindarle el apoyo necesario:\n\n[Escriba su mensaje de orientación aquí]\n\nAtentamente,\nPersonal Institucional - Sistema NEBULA`)}`}
+                              className="action-btn-review inline-block px-3 py-1 bg-purple-700 hover:bg-purple-600 text-white rounded text-xs transition"
                             >
-                              Revisar
+                              Responder
+                            </a>
+                            <button
+                              type="button"
+                              className="action-btn-review px-3 py-1 bg-rose-900 text-white rounded text-xs"
+                              onClick={() => handleDeleteRequest(request)}
+                              disabled={deletingRequestId === request._id}
+                            >
+                              {deletingRequestId === request._id ? 'Eliminando…' : 'Eliminar'}
                             </button>
                           </td>
                         </tr>
@@ -296,7 +363,30 @@ export default function AdminDashboard() {
               )}
 
             </div>
+          ) : activeTab === 'reportes' ? (
+            <Reportes />
           ) : activeTab === 'estadisticas' ? (
+            <>
+            <section className="statistics-summary" aria-label="Totales de la plataforma">
+              {[
+                ['Autoevaluaciones completadas', statistics?.autoevaluaciones],
+                ['Reportes registrados', statistics?.reportes],
+                ['Socios', statistics?.socios],
+              ].map(([label, count]) => (
+                <div className="metric-box" key={label}>
+                  <span className="metric-box-title">{label}</span>
+                  <div className="metric-box-content">
+                    <span className="metric-box-number">
+                      {count === undefined ? (statisticsLoading ? '…' : '—') : count.toLocaleString('es-MX')}
+                    </span>
+                    <span className="metric-box-tag">Base de datos</span>
+                  </div>
+                </div>
+              ))}
+            </section>
+            {statisticsError && (
+              <p className="statistics-error" role="alert">{statisticsError}</p>
+            )}
             <div className="stats-grid-container">
               <div className="admin-card-section">
                 <h3 className="section-title-custom">Incidencia por Tipo de Violencia</h3>
@@ -344,7 +434,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
-          ) : (
+            </>
+          ) : isAdministrator ? (
             <div className="admin-card-section">
               <div className="flex-between mb-4">
                 <div>
@@ -374,62 +465,17 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+          ) : (
+            <section className="admin-access-denied" role="alert">
+              <h3>No tienes permisos para acceder a esta sección</h3>
+              <p>Selecciona una sección habilitada para tu rol.</p>
+            </section>
+          )}
+            </>
           )}
 
         </div>
       </main>
-
-      {/* Modal de Detalle */}
-      {selectedItem && (
-        <div className="admin-modal-overlay">
-          <div className="admin-modal-card">
-            <div className="modal-header">
-              <div>
-                <span className="modal-id">{selectedItem.id || selectedItem._id}</span>
-                <h3 className="modal-title">Detalle del Registro</h3>
-              </div>
-              <button onClick={() => setSelectedItem(null)} className="modal-close-btn">✕</button>
-            </div>
-
-            <div className="modal-body-content">
-              <div>
-                <span className="modal-field-label">Tipo de caso</span>
-                <p className="modal-field-value">{selectedItem.tipo}</p>
-              </div>
-              <div>
-                <span className="modal-field-label">Fecha de registro</span>
-                <p className="modal-field-value">{selectedItem.fecha ? selectedItem.fecha.split('T')[0] : 'Reciente'}</p>
-              </div>
-              <div>
-                <span className="modal-field-label">Nivel de Urgencia</span>
-                <p className="modal-field-value text-rose">{selectedItem.urgencia}</p>
-              </div>
-              <div>
-                <span className="modal-field-label">Descripción / Detalle</span>
-                <p className="modal-detail-box">{selectedItem.detalle || selectedItem.message || 'Sin descripción detallada.'}</p>
-              </div>
-
-              <div className="modal-actions-box">
-                <span className="modal-field-label">Actualizar Estado del Caso</span>
-                <div className="modal-buttons-row">
-                  <button onClick={() => handleUpdateStatus(selectedItem.id || selectedItem._id, 'En proceso')} className="btn-status-blue">
-                    En Proceso
-                  </button>
-                  <button onClick={() => handleUpdateStatus(selectedItem.id || selectedItem._id, 'Atendido')} className="btn-status-emerald">
-                    Resolver / Atendido
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button onClick={() => setSelectedItem(null)} className="btn-secondary-custom">
-                Cerrar Ventana
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

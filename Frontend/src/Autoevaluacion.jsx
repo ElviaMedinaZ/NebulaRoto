@@ -1,4 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { API_URL } from './apiUrl.js'
+
+function createCompletionId() {
+  if (typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID()
+  }
+
+  const bytes = new Uint8Array(16)
+  window.crypto.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 
 // Opciones de respuesta y valor que aporta cada una al cálculo orientativo.
 const answers = [
@@ -380,7 +394,16 @@ function getResult(responses, questionOrder) {
     }))
     .filter((response) => response && response.score !== null)
 
-  if (answered.length === 0) return riskLevels.unavailable
+  if (answered.length === 0) {
+    return {
+      ...riskLevels.unavailable,
+      levelKey: 'unavailable',
+      percentage: 0,
+      conducts: [],
+      tiposViolencia: [],
+      recommendation: null,
+    }
+  }
 
   const score = answered.reduce(
     (total, response) => total + response.score * response.question.weight,
@@ -409,10 +432,18 @@ function getResult(responses, questionOrder) {
   // Generar únicamente UNA recomendación según el nivel de riesgo detectado (RF11)
   const singleRecommendation = highestLevelKey ? recommendationsMap[highestLevelKey] : null
 
-  return { ...level, percentage, conducts, tiposViolencia, recommendation: singleRecommendation }
+  return {
+    ...level,
+    levelKey: highestLevelKey || 'none',
+    percentage,
+    conducts,
+    tiposViolencia,
+    recommendation: singleRecommendation,
+  }
 }
 
 function Autoevaluacion({ onClose, onFindSupport }) {
+  const completionId = useRef(null)
   const [questionOrder, setQuestionOrder] = useState(
     questions.filter(({ adaptive }) => !adaptive).map(({ id }) => id).slice(0, MAX_QUESTIONS),
   )
@@ -420,6 +451,34 @@ function Autoevaluacion({ onClose, onFindSupport }) {
   const [responses, setResponses] = useState([])
   const [selectedAnswer, setSelectedAnswer] = useState(null)
   const [showResult, setShowResult] = useState(false)
+  const [completionStatus, setCompletionStatus] = useState('idle')
+
+  const registerCompletion = async (result) => {
+    if (completionId.current) return
+
+    setCompletionStatus('saving')
+
+    try {
+      completionId.current = createCompletionId()
+      const response = await fetch(`${API_URL}/api/assessments/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          completionId: completionId.current,
+          violenceTypes: result.tiposViolencia,
+          riskLevel: result.levelKey,
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(payload?.mensaje || 'No se pudo registrar la autoevaluación.')
+      }
+      setCompletionStatus('saved')
+    } catch (error) {
+      console.error('No se pudo registrar la autoevaluación completada:', error)
+      setCompletionStatus('failed')
+    }
+  }
 
   // Acumulador dinámico de puntos según el tipo de violencia detectado
   const [violenceScores, setViolenceScores] = useState({
@@ -465,6 +524,7 @@ function Autoevaluacion({ onClose, onFindSupport }) {
 
     if (currentIndex === questionOrder.length - 1) {
       setShowResult(true)
+      void registerCompletion(result)
       return
     }
 
@@ -529,6 +589,8 @@ function Autoevaluacion({ onClose, onFindSupport }) {
       'Económica': 0,
       'Digital': 0,
     })
+    completionId.current = null
+    setCompletionStatus('idle')
     setShowResult(false)
   }
 
@@ -638,6 +700,15 @@ function Autoevaluacion({ onClose, onFindSupport }) {
               Este resultado es estrictamente orientativo y no constituye un diagnóstico ni una
               evaluación profesional. Si estás en peligro inmediato, llama al 911.
             </p>
+            {completionStatus === 'saving' && (
+              <p role="status">Registrando la finalización de forma anónima…</p>
+            )}
+            {completionStatus === 'saved' && (
+              <p role="status">Autoevaluación contabilizada de forma anónima.</p>
+            )}
+            {completionStatus === 'failed' && (
+              <p role="alert">No se pudo registrar esta autoevaluación en las estadísticas. Tu resultado sigue disponible.</p>
+            )}
 
             <div className="assessment-result-actions">
               <button type="button" className="assessment-exit" onClick={onFindSupport}>

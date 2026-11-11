@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { jsPDF } from 'jspdf'
+import { autoTable } from 'jspdf-autotable'
+import { API_URL } from './apiUrl.js'
 import {
     getOrientationResources,
     createOrientationResource,
@@ -40,14 +43,40 @@ const initialPartnerForm = {
     image: '',
 }
 
+async function readApiResponse(response, fallbackMessage) {
+    const body = await response.text()
+    let result = null
+
+    if (body) {
+        try {
+            result = JSON.parse(body)
+        } catch {
+            if (response.ok) throw new Error('El servidor devolvió una respuesta vacía o inválida.')
+        }
+    }
+
+    if (!response.ok) {
+        throw new Error(result?.mensaje || result?.error || fallbackMessage)
+    }
+
+    return result
+}
+
 function Admin({ onLogout }) { 
     const [isLoggingOut, setIsLoggingOut] = useState(false)
     const [logoutError, setLogoutError] = useState('')
+    const [isLoadingSession, setIsLoadingSession] = useState(true)
     
     // Estado para el usuario autenticado real
-    const [currentUser, setCurrentUser] = useState({ nombre: 'Cargando...', email: '', role: 'institucional' })
+    const [currentUser, setCurrentUser] = useState({ nombre: 'Cargando...', email: '', role: 'usuario' })
     const [currentView, setCurrentView] = useState('estadisticas-violencia')
-    const [selectedGlobalInst, setSelectedGlobalInst] = useState('global')
+    const isAdminGeneral = currentUser.role === 'admin'
+    const isInstitutional = currentUser.role === 'institucional'
+    const [platformStatistics, setPlatformStatistics] = useState(null)
+    const [isLoadingStatistics, setIsLoadingStatistics] = useState(false)
+    const [isExportingReport, setIsExportingReport] = useState(false)
+    const [statisticsError, setStatisticsError] = useState('')
+    const statisticsLoaded = useRef(false)
 
     // Estados para Recursos (Catálogo de Contenidos)
     const [resources, setResources] = useState([])
@@ -82,8 +111,9 @@ function Admin({ onLogout }) {
 
     // Estado para saber qué usuario se está editando y su formulario
     const [editingUserId, setEditingUserId] = useState('')
-    const [userForm, setUserForm] = useState({ nombre: '', email: '', role: 'institucional', institucion: '' })
+    const [userForm, setUserForm] = useState({ nombre: '', email: '', role: 'usuario' })
     const [isSavingUser, setIsSavingUser] = useState(false)
+    const [updatingRoleId, setUpdatingRoleId] = useState('')
 
     // Efecto para desvanecer las notificaciones automáticamente después de 4 segundos
     useEffect(() => {
@@ -102,56 +132,32 @@ function Admin({ onLogout }) {
         }
     }, [accountNotice, requestNotice, partnerNotice, resourceNotice, accountError, requestError, partnerError, resourceError])
 
-    // Asegúrate de cargar los socios también cuando estés en estadísticas para llenar el select dinámicamente:
-    useEffect(() => {
-        let isMounted = true;
-        getPartners()
-            .then((loaded) => { if (isMounted) setPartners(loaded) })
-            .catch((err) => console.error(err));
-        return () => { isMounted = false };
-    }, []);
-
     // Cargar la sesión actual al montar el componente de forma limpia
     useEffect(() => {
         let isMounted = true
 
         const loadSession = async () => {
             try {
-                const res = await fetch('/api/auth/me', { credentials: 'include' })
+                const res = await fetch(`${API_URL}/api/auth/me`, { credentials: 'include' })
                 if (!res.ok) throw new Error('No autorizado')
                 const data = await res.json()
-                
-                if (data && data.usuario && isMounted) {
-                    let usuario = data.usuario;
-                    if (usuario.email === 'admin@nebula.com') {
-                        usuario.role = 'admin';
-                    }
-                    setCurrentUser(usuario);
-                    const esAdmin = usuario.email === 'admin@nebula.com' || usuario.role === 'admin';
-                    setCurrentView(esAdmin ? 'estadisticas-violencia' : 'solicitudes');
-                    return;
+                if (!data?.usuario) throw new Error('El servidor no devolvió el perfil de la sesión.')
+
+                if (isMounted) {
+                    const usuario = data.usuario
+                    setCurrentUser(usuario)
+                    setCurrentView(usuario.role === 'usuario'
+                        ? 'sin-acceso'
+                        : 'estadisticas-violencia')
                 }
-            } catch (err) {
-                // Respaldo local
-            }
-
-            const saved = localStorage.getItem('nebula_user')
-            if (saved && isMounted) {
-                try {
-                    const parsed = JSON.parse(saved)
-                    if (parsed.email === 'admin@nebula.com') {
-                        parsed.role = 'admin';
-                    }
-                    setCurrentUser(parsed);
-                    const esAdmin = parsed.email === 'admin@nebula.com' || parsed.role === 'admin';
-                    setCurrentView(esAdmin ? 'estadisticas-violencia' : 'solicitudes');
-                    return;
-                } catch (e) {}
-            }
-
-            if (isMounted) {
-                setCurrentUser({ nombre: 'Administrador Técnico', email: 'admin@nebula.com', role: 'admin' });
-                setCurrentView('estadisticas-violencia');
+            } catch (error) {
+                if (isMounted) {
+                    setCurrentUser({ nombre: 'Usuario', email: '', role: 'usuario' })
+                    setCurrentView('sin-acceso')
+                    setRequestError(error.message)
+                }
+            } finally {
+                if (isMounted) setIsLoadingSession(false)
             }
         }
 
@@ -160,16 +166,17 @@ function Admin({ onLogout }) {
     }, [])
 
     useEffect(() => {
+        if (currentUser.role !== 'admin' && currentUser.role !== 'institucional') return undefined
         let isMounted = true
         getOrientationRequests()
             .then((loaded) => { if (isMounted) setOrientationRequests(loaded) })
             .catch((err) => { if (isMounted) setRequestError(err.message) })
             .finally(() => { if (isMounted) setIsLoadingRequests(false) })
         return () => { isMounted = false }
-    }, [])
+    }, [currentUser.role])
 
     useEffect(() => {
-        if (currentView !== 'socios') return undefined
+        if ((!isAdminGeneral && !isInstitutional) || currentView !== 'socios') return undefined
         let isMounted = true
         setIsLoadingPartners(true)
         getPartners()
@@ -177,24 +184,25 @@ function Admin({ onLogout }) {
             .catch((err) => { if (isMounted) setPartnerError(err.message) })
             .finally(() => { if (isMounted) setIsLoadingPartners(false) })
         return () => { isMounted = false }
-    }, [currentView])
+    }, [currentView, isAdminGeneral, isInstitutional])
 
     useEffect(() => {
-        if (currentView !== 'usuarios') return undefined
+        if (!isAdminGeneral || currentView !== 'usuarios') return undefined
         let isMounted = true
         setIsLoadingAccounts(true)
-        fetch('/api/auth/users', { credentials: 'include' })
-            .then(res => res.json())
+        fetch(`${API_URL}/api/auth/users`, { credentials: 'include' })
+            .then(res => readApiResponse(res, 'No se pudieron cargar las cuentas.'))
             .then(loaded => {
-                if (isMounted && Array.isArray(loaded)) setAccounts(loaded)
+                if (!Array.isArray(loaded)) throw new Error('La respuesta de cuentas no tiene un formato válido.')
+                if (isMounted) setAccounts(loaded)
             })
             .catch(err => { if (isMounted) setAccountError(err.message) })
             .finally(() => { if (isMounted) setIsLoadingAccounts(false) })
         return () => { isMounted = false }
-    }, [currentView])
+    }, [currentView, isAdminGeneral])
 
     useEffect(() => {
-        if (currentView !== 'catalogo') return undefined
+        if (!isAdminGeneral || currentView !== 'catalogo') return undefined
         let isMounted = true
         setIsLoadingResources(true)
         getOrientationResources()
@@ -202,17 +210,7 @@ function Admin({ onLogout }) {
             .catch((err) => { if (isMounted) setResourceError(err.message) })
             .finally(() => { if (isMounted) setIsLoadingResources(false) })
         return () => { isMounted = false }
-    }, [currentView])
-
-    useEffect(() => {
-        let isMounted = true
-            getPartners()
-                .then((data) => {
-                    if (isMounted) setPartners(data)
-                })
-                .catch((err) => console.error(err))
-        return () => { isMounted = false }
-    }, []) // <-- Si cambias esto para que se ejecute al cambiar de vista o recargas, se sincronizará al instante.
+    }, [currentView, isAdminGeneral])
 
     const handleLogout = async () => {
         setIsLoggingOut(true)
@@ -226,21 +224,56 @@ function Admin({ onLogout }) {
         }
     }
 
-    // Validación segura del rol de Administrador General
-    const isAdminGeneral = 
-        currentUser.email === 'admin@nebula.com' || 
-        currentUser.role === 'admin' || 
-        currentUser.role === 'administrador';
+    useEffect(() => {
+        if ((!isAdminGeneral && !isInstitutional) || currentView !== 'estadisticas-violencia') return undefined
+
+        let isMounted = true
+        const loadStatistics = async () => {
+            if (!statisticsLoaded.current) setIsLoadingStatistics(true)
+            try {
+                const response = await fetch(`${API_URL}/api/statistics/dashboard`, {
+                    credentials: 'include'
+                })
+                const data = await readApiResponse(response, 'No se pudieron cargar las estadísticas.')
+                if (![data?.autoevaluaciones, data?.reportes, data?.socios]
+                    .every((count) => Number.isSafeInteger(count) && count >= 0)) {
+                    throw new Error('La respuesta de estadísticas del servidor no es válida.')
+                }
+                const incidenceTypes = ['Psicológica / Emocional', 'Física', 'Sexual', 'Económica', 'Digital']
+                const meterLevels = ['advertencia', 'reaccion', 'peligro']
+                if (!incidenceTypes.every((type) => Number.isSafeInteger(data.incidencia?.[type]) && data.incidencia[type] >= 0)
+                    || !meterLevels.every((level) => Number.isSafeInteger(data.violentometro?.[level]) && data.violentometro[level] >= 0)) {
+                    throw new Error('La respuesta de métricas por categoría no es válida.')
+                }
+                if (isMounted) {
+                    statisticsLoaded.current = true
+                    setPlatformStatistics(data)
+                    setStatisticsError('')
+                }
+            } catch (error) {
+                if (isMounted) setStatisticsError(error.message)
+            } finally {
+                if (isMounted) setIsLoadingStatistics(false)
+            }
+        }
+
+        loadStatistics()
+        const refreshInterval = window.setInterval(loadStatistics, 30000)
+        return () => {
+            isMounted = false
+            window.clearInterval(refreshInterval)
+        }
+    }, [currentView, isAdminGeneral, isInstitutional])
 
     // Función real para eliminar un usuario de la base de datos
     const handleDeleteUser = async (userId, userName) => {
         if (!window.confirm(`¿Estás seguro de eliminar la cuenta de "${userName}"?`)) return
         try {
-            const res = await fetch(`/api/auth/users/${userId}`, {
+            const res = await fetch(`${API_URL}/api/auth/users/${encodeURIComponent(userId)}`, {
                 method: 'DELETE',
                 credentials: 'include'
             })
-            if (!res.ok) throw new Error('No se pudo eliminar el usuario.')
+            await readApiResponse(res, 'No se pudo eliminar el usuario.')
             
             setAccounts((curr) => curr.filter((acc) => acc._id !== userId))
             setAccountNotice('Cuenta eliminada correctamente de la base de datos.')
@@ -249,24 +282,28 @@ function Admin({ onLogout }) {
         }
     }
 
-    // Función real para cambiar el estado (Activo / Inactivo)
-    const handleToggleStatusUser = async (userId, currentStatus) => {
-        const nuevoEstado = currentStatus === 'Inactivo' ? 'Activa' : 'Inactivo'
+    const handleChangeUserRole = async (userId, role) => {
+        setUpdatingRoleId(userId)
+        setAccountError('')
         try {
-            const res = await fetch(`/api/auth/users/${userId}/status`, {
-                method: 'PATCH',
+            const res = await fetch(`${API_URL}/api/auth/users/${encodeURIComponent(userId)}`, {
+                method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ estado: nuevoEstado }),
+                body: JSON.stringify({ role }),
                 credentials: 'include'
             })
-            if (!res.ok) throw new Error('No se pudo actualizar el estado.')
-            
-            const updatedUser = await res.json()
-            setAccounts((curr) => curr.map((acc) => acc._id === userId ? { ...acc, estado: updatedUser.estado || nuevoEstado } : acc))
-            setAccountNotice('Estado de cuenta actualizado correctamente.')
+            const result = await readApiResponse(res, 'No se pudo actualizar el rol.')
+            if (!result?.usuario) throw new Error('El servidor no devolvió el usuario actualizado.')
+            setAccounts((curr) => curr.map((acc) => acc._id === userId ? result.usuario : acc))
+            if (result.usuario.email === currentUser.email) {
+                setCurrentUser((curr) => ({ ...curr, role: result.usuario.role }))
+                setCurrentView(result.usuario.role === 'usuario' ? 'sin-acceso' : 'estadisticas-violencia')
+            }
+            setAccountNotice('Rol actualizado correctamente.')
         } catch (err) {
-            setAccounts((curr) => curr.map((acc) => acc._id === userId ? { ...acc, estado: nuevoEstado } : acc))
-            setAccountNotice('Estado actualizado en la vista.')
+            setAccountError(err.message)
+        } finally {
+            setUpdatingRoleId('')
         }
     }
 
@@ -275,8 +312,7 @@ function Admin({ onLogout }) {
         setUserForm({
             nombre: acc.nombre || '',
             email: acc.email || '',
-            role: acc.role || 'institucional',
-            institucion: acc.institucion || 'Universidad Autónoma de Baja California Sur'
+            role: acc.role || 'usuario'
         })
         setAccountNotice(`Modo edición abierto para: ${acc.nombre}`)
     }
@@ -286,88 +322,235 @@ function Admin({ onLogout }) {
         setIsSavingUser(true)
         setAccountError('')
         try {
-            const res = await fetch(`/api/auth/users/${editingUserId}`, {
+            const res = await fetch(`${API_URL}/api/auth/users/${encodeURIComponent(editingUserId)}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(userForm),
                 credentials: 'include'
             })
-            if (!res.ok) throw new Error('No se pudo actualizar el usuario.')
-            
-            const updated = await res.json()
-            setAccounts((curr) => curr.map((acc) => acc._id === editingUserId ? (updated.usuario || updated) : acc))
+            const result = await readApiResponse(res, 'No se pudo actualizar el usuario.')
+            if (!result?.usuario) throw new Error('El servidor no devolvió el usuario actualizado.')
+            const isCurrentUser = accounts.some((acc) => acc._id === editingUserId && acc.email === currentUser.email)
+            setAccounts((curr) => curr.map((acc) => acc._id === editingUserId ? result.usuario : acc))
+            if (isCurrentUser) {
+                setCurrentUser((curr) => ({ ...curr, ...result.usuario }))
+                setCurrentView(result.usuario.role === 'usuario' ? 'sin-acceso' : 'estadisticas-violencia')
+            }
             setAccountNotice('Usuario actualizado correctamente en la base de datos.')
             setEditingUserId('')
-            setUserForm({ nombre: '', email: '', role: 'institucional', institucion: '' })
+            setUserForm({ nombre: '', email: '', role: 'usuario' })
         } catch (err) {
-            // Respaldo visual si el endpoint requiere ajuste en backend
-            setAccounts((curr) => curr.map((acc) => acc._id === editingUserId ? { ...acc, ...userForm } : acc))
-            setAccountNotice('Usuario actualizado en la vista.')
-            setEditingUserId('')
+            setAccountError(err.message)
         } finally {
             setIsSavingUser(false)
         }
     }
 
-    const handleExportPDF = () => {
-        const printWindow = window.open('', '_blank')
-        if (!printWindow) {
-            alert('Por favor, permite las ventanas emergentes (pop-ups) para descargar el PDF.')
+    const handleExportPDF = async () => {
+        if (isExportingReport) return
+        if (!platformStatistics) {
+            setStatisticsError('Las estadísticas todavía no están disponibles para exportarse.')
             return
         }
 
-        <select 
-            value={selectedGlobalInst}
-            onChange={(e) => setSelectedGlobalInst(e.target.value)}
-            style={{ background: '#0f172a', color: '#fff', border: 'none', fontSize: '12px', outline: 'none', cursor: 'pointer' }}
-        >
-            <option value="global">Todas las Instituciones (Global)</option>
-            {partners.map((partner) => (
-                <option key={partner._id} value={partner.name}>
-                    {partner.name}
-                </option>
-            ))}
-        </select>
-        
-        const htmlContent = `
-            <!DOCTYPE html>
-            <html lang="es">
-            <head>
-                <meta charset="UTF-8">
-                <title>Reporte de Estadísticas de Violencia - NEBULA</title>
-                <style>
-                    body { font-family: Arial, sans-serif; color: #111; padding: 30px; margin: 0; background: #fff; }
-                    .header { background: #581c87; color: white; padding: 20px; border-radius: 8px; margin-bottom: 25px; }
-                    h1 { margin: 0 0 5px 0; font-size: 22px; }
-                    p { margin: 4px 0; font-size: 13px; color: #ddd; }
-                    h2 { font-size: 16px; border-bottom: 2px solid #581c87; padding-bottom: 5px; margin-top: 30px; color: #333; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
-                    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
-                    th { background: #f3f4f6; color: #333; }
-                    .footer { margin-top: 40px; font-size: 11px; color: #666; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h1>SISTEMA NEBULA - REPORTE DE ESTADÍSTICAS DE VIOLENCIA</h1>
-                    <p>Entidad Analizada: ${targetName}</p>
-                    <p>Fecha de emisión: ${new Date().toLocaleDateString('es-MX')}</p>
-                </div>
-                <h2>Indicadores Globales de Violencia e Incidencia</h2>
-                <table>
-                    <tr><th>Métrica / Tipo de Incidencia</th><th>Casos Registrados</th><th>Nivel de Riesgo</th></tr>
-                    <tr><td>Violencia Psicológica / Emocional</td><td>28</td><td>Moderado / Alto</td></tr>
-                    <tr><td>Violencia Física / Lesiones</td><td>12</td><td>Crítico</td></tr>
-                    <tr><td>Violencia Digital / Acoso en Redes</td><td>19</td><td>En incremento</td></tr>
-                    <tr><td>Atenciones y Canalizaciones Exitosas</td><td>45</td><td>Completado</td></tr>
-                </table>
-                <div class="footer">Documento generado automáticamente por el Sistema NEBULA</div>
-                <script>window.onload = function() { window.print() }</script>
-            </body>
-            </html>
-        `
-        printWindow.document.write(htmlContent)
-        printWindow.document.close()
+        setIsExportingReport(true)
+        setStatisticsError('')
+        let reportPartners
+        try {
+            reportPartners = await getPartners()
+            if (!Array.isArray(reportPartners)) {
+                throw new Error('La API devolvió un formato inválido para socios.')
+            }
+        } catch (error) {
+            console.error('No se pudieron cargar los socios para el reporte PDF:', error)
+            setStatisticsError(error.message || 'No se pudieron cargar los socios para el reporte.')
+            setIsExportingReport(false)
+            return
+        }
+
+        const incidenceTypes = [
+            'Psicológica / Emocional',
+            'Física',
+            'Sexual',
+            'Económica',
+            'Digital',
+        ]
+        const meterLabels = [
+            ['advertencia', 'Alerta Amarilla (Precaución)'],
+            ['reaccion', 'Alerta Naranja (Atención / Reacciona)'],
+            ['peligro', 'Alerta Roja (Peligro / Urgente)'],
+        ]
+        const incidenceTotal = incidenceTypes.reduce(
+            (total, type) => total + (platformStatistics?.incidencia?.[type] || 0),
+            0,
+        )
+        const meterTotal = meterLabels.reduce(
+            (total, [level]) => total + (platformStatistics?.violentometro?.[level] || 0),
+            0,
+        )
+
+        try {
+            const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+            const pageWidth = pdf.internal.pageSize.getWidth()
+            const margin = 16
+            const contentWidth = pageWidth - margin * 2
+            const generatedAt = new Date()
+            const summary = [
+                ['Autoevaluaciones completadas', platformStatistics.autoevaluaciones],
+                ['Reportes registrados', platformStatistics.reportes],
+                ['Socios', platformStatistics.socios],
+            ]
+
+            pdf.setFillColor(91, 48, 116)
+            pdf.rect(0, 0, pageWidth, 38, 'F')
+            pdf.setTextColor(255, 255, 255)
+            pdf.setFont('helvetica', 'bold')
+            pdf.setFontSize(18)
+            pdf.text('NEBULA | Reporte de estadísticas', margin, 17)
+            pdf.setFont('helvetica', 'normal')
+            pdf.setFontSize(10)
+            pdf.text('Datos globales y anónimos', margin, 25)
+            pdf.text(`Generado: ${generatedAt.toLocaleString('es-MX')}`, margin, 32)
+
+            const summaryGap = 4
+            const summaryWidth = (contentWidth - summaryGap * 2) / 3
+            const summaryY = 46
+            summary.forEach(([label, count], index) => {
+                const x = margin + index * (summaryWidth + summaryGap)
+                pdf.setFillColor(247, 244, 249)
+                pdf.setDrawColor(224, 216, 230)
+                pdf.roundedRect(x, summaryY, summaryWidth, 25, 2, 2, 'FD')
+                pdf.setTextColor(89, 79, 96)
+                pdf.setFont('helvetica', 'normal')
+                pdf.setFontSize(8)
+                pdf.text(pdf.splitTextToSize(label, summaryWidth - 8), x + 4, summaryY + 7)
+                pdf.setTextColor(65, 36, 82)
+                pdf.setFont('helvetica', 'bold')
+                pdf.setFontSize(15)
+                pdf.text(Number(count).toLocaleString('es-MX'), x + 4, summaryY + 20)
+            })
+
+            pdf.setTextColor(48, 39, 54)
+            pdf.setFont('helvetica', 'bold')
+            pdf.setFontSize(12)
+            pdf.text('Incidencia por tipos señalados en autoevaluaciones', margin, 83)
+            pdf.setFont('helvetica', 'normal')
+            pdf.setFontSize(9)
+            pdf.setTextColor(100, 92, 105)
+            pdf.text('Una evaluación puede señalar más de un tipo; el porcentaje usa el total de menciones.', margin, 89)
+            autoTable(pdf, {
+                startY: 93,
+                margin: { left: margin, right: margin },
+                head: [['Tipo de violencia', 'Menciones', 'Porcentaje']],
+                body: incidenceTypes.map((type) => {
+                    const count = platformStatistics.incidencia[type]
+                    const percentage = incidenceTotal ? `${((count / incidenceTotal) * 100).toFixed(1)}%` : '0.0%'
+                    return [type, count.toLocaleString('es-MX'), percentage]
+                }),
+                theme: 'grid',
+                styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.8 },
+                headStyles: { fillColor: [91, 48, 116], textColor: [255, 255, 255] },
+                alternateRowStyles: { fillColor: [248, 246, 250] },
+                columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
+            })
+
+            const meterHeadingY = pdf.lastAutoTable.finalY + 12
+            pdf.setTextColor(48, 39, 54)
+            pdf.setFont('helvetica', 'bold')
+            pdf.setFontSize(12)
+            pdf.text('Niveles consultados en el Violentómetro', margin, meterHeadingY)
+            pdf.setFont('helvetica', 'normal')
+            pdf.setFontSize(9)
+            pdf.setTextColor(100, 92, 105)
+            pdf.text(
+                'Son selecciones informativas y no representan detecciones ni diagnósticos de riesgo.',
+                margin,
+                meterHeadingY + 6,
+                { maxWidth: contentWidth },
+            )
+            autoTable(pdf, {
+                startY: meterHeadingY + 10,
+                margin: { left: margin, right: margin },
+                head: [['Nivel', 'Consultas', 'Porcentaje']],
+                body: meterLabels.map(([level, label]) => {
+                    const count = platformStatistics.violentometro[level]
+                    const percentage = meterTotal ? `${((count / meterTotal) * 100).toFixed(1)}%` : '0.0%'
+                    return [label, count.toLocaleString('es-MX'), percentage]
+                }),
+                theme: 'grid',
+                styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.8 },
+                headStyles: { fillColor: [91, 48, 116], textColor: [255, 255, 255] },
+                alternateRowStyles: { fillColor: [248, 246, 250] },
+                columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
+            })
+
+            const addSectionHeading = (title, description) => {
+                let y = pdf.lastAutoTable.finalY + 12
+                if (y > 260) {
+                    pdf.addPage()
+                    y = 20
+                }
+                pdf.setTextColor(48, 39, 54)
+                pdf.setFont('helvetica', 'bold')
+                pdf.setFontSize(12)
+                pdf.text(title, margin, y)
+                if (description) {
+                    pdf.setFont('helvetica', 'normal')
+                    pdf.setFontSize(9)
+                    pdf.setTextColor(100, 92, 105)
+                    const lines = pdf.splitTextToSize(description, contentWidth)
+                    pdf.text(lines, margin, y + 6)
+                    return y + 6 + lines.length * 4
+                }
+                return y + 6
+            }
+
+            const partnerTableStart = addSectionHeading(
+                'Socios e instituciones colaboradoras',
+                `Directorio completo · ${reportPartners.length} registro(s)`,
+            )
+            autoTable(pdf, {
+                startY: partnerTableStart + 2,
+                margin: { left: margin, right: margin },
+                head: [['Institución', 'Tipo de colaboración', 'Sitio web', 'Imagen']],
+                body: reportPartners.length
+                    ? reportPartners.map((partner) => [
+                        partner.name || 'Sin nombre',
+                        partner.type || 'Sin tipo',
+                        partner.url || 'Sin URL',
+                        partner.image || 'No registrada',
+                    ])
+                    : [['No hay socios registrados.', '', '', '']],
+                theme: 'grid',
+                styles: { font: 'helvetica', fontSize: 7, cellPadding: 2.2, overflow: 'linebreak' },
+                headStyles: { fillColor: [91, 48, 116], textColor: [255, 255, 255] },
+                alternateRowStyles: { fillColor: [248, 246, 250] },
+                columnStyles: {
+                    0: { cellWidth: 42 },
+                    1: { cellWidth: 37 },
+                    2: { cellWidth: 63 },
+                    3: { cellWidth: 'auto' },
+                },
+            })
+
+            const pageCount = pdf.getNumberOfPages()
+            for (let page = 1; page <= pageCount; page += 1) {
+                pdf.setPage(page)
+                pdf.setFont('helvetica', 'normal')
+                pdf.setFontSize(8)
+                pdf.setTextColor(120, 112, 124)
+                pdf.text('NEBULA · Estadísticas anónimas', margin, 287)
+                pdf.text(`Página ${page} de ${pageCount}`, pageWidth - margin, 287, { align: 'right' })
+            }
+
+            pdf.save(`nebula-estadisticas-${generatedAt.toISOString().slice(0, 10)}.pdf`)
+            setStatisticsError('')
+        } catch (error) {
+            console.error('No se pudo exportar el reporte de estadísticas:', error)
+            setStatisticsError('No se pudo generar el PDF. Inténtalo de nuevo.')
+        } finally {
+            setIsExportingReport(false)
+        }
     }
 
     const handleDeleteRequest = async (req) => {
@@ -499,7 +682,9 @@ const handleDeletePartner = async (partner) => {
                         <div>
                             <h1 className="admin-title">NEBULA</h1>
                             <span className="admin-badge">
-                                {isAdminGeneral ? 'Administrador Técnico' : 'Personal Institucional'}
+                                {isLoadingSession ? 'Verificando sesión' :
+                                    isAdminGeneral ? 'Administrador Técnico' :
+                                        isInstitutional ? 'Personal Institucional' : 'Usuario'}
                             </span>
                         </div>
                     </div>
@@ -508,6 +693,20 @@ const handleDeletePartner = async (partner) => {
                         {isAdminGeneral ? (
                             <>
                                 <div className="text-xs uppercase text-slate-500 font-bold px-3 py-2">Administrador Técnico</div>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentView('solicitudes')}
+                                    className={`admin-nav-btn ${currentView === 'solicitudes' ? 'active' : ''}`}
+                                >
+                                    <span>Solicitudes de Orientación</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentView('reportes')}
+                                    className={`admin-nav-btn ${currentView === 'reportes' ? 'active' : ''}`}
+                                >
+                                    <span>Reportes Anónimos</span>
+                                </button>
                                 <button
                                     type="button"
                                     onClick={() => setCurrentView('estadisticas-violencia')}
@@ -537,7 +736,7 @@ const handleDeletePartner = async (partner) => {
                                     <span>Catálogo de Contenidos</span>
                                 </button>
                             </>
-                        ) : (
+                        ) : isInstitutional ? (
                             <>
                                 <div className="text-xs uppercase text-slate-500 font-bold px-3 py-2">Dashboard Institucional</div>
                                 <button
@@ -554,7 +753,25 @@ const handleDeletePartner = async (partner) => {
                                 >
                                     <span>Reportes Anónimos</span>
                                 </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentView('estadisticas-violencia')}
+                                    className={`admin-nav-btn ${currentView === 'estadisticas-violencia' ? 'active' : ''}`}
+                                >
+                                    <span>Estadísticas</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentView('socios')}
+                                    className={`admin-nav-btn ${currentView === 'socios' ? 'active' : ''}`}
+                                >
+                                    <span>Socios (Instituciones)</span>
+                                </button>
                             </>
+                        ) : isLoadingSession ? (
+                            <p className="admin-access-nav-note" role="status">Verificando permisos…</p>
+                        ) : (
+                            <p className="admin-access-nav-note">Tu rol no tiene acceso al panel administrativo.</p>
                         )}
                     </nav>
                 </div>
@@ -589,7 +806,9 @@ const handleDeletePartner = async (partner) => {
                 <header className="admin-header-bar">
                     <div>
                         <h2 className="admin-header-title">
-                            {currentView === 'solicitudes' ? 'Bandeja de Solicitudes de Orientación' :
+                            {isLoadingSession ? 'Verificando permisos de la cuenta…' :
+                             currentUser.role === 'usuario' ? 'Acceso restringido' :
+                             currentView === 'solicitudes' ? 'Bandeja de Solicitudes de Orientación' :
                              currentView === 'reportes' ? 'Gestión de Reportes Anónimos' :
                              currentView === 'estadisticas-violencia' ? 'Módulo de Estadísticas de Violencia de Todas las Instituciones' :
                              currentView === 'socios' ? 'Registro y Control de Instituciones (Socios)' :
@@ -605,9 +824,19 @@ const handleDeletePartner = async (partner) => {
                 </header>
 
                 <div className="admin-body-container">
-                    {currentView === 'reportes' ? (
+                    {isLoadingSession ? (
+                        <section className="admin-access-denied" role="status">
+                            <h3>Verificando acceso</h3>
+                            <p>Estamos comprobando los permisos de tu cuenta.</p>
+                        </section>
+                    ) : currentUser.role === 'usuario' ? (
+                        <section className="admin-access-denied" role="alert">
+                            <h3>No tienes permisos para acceder a los recursos</h3>
+                            <p>Tu cuenta tiene el rol Usuario y no cuenta con acceso al panel administrativo. Si necesitas acceso institucional, contacta con el administrador del sistema.</p>
+                        </section>
+                    ) : (isAdminGeneral || isInstitutional) && currentView === 'reportes' ? (
                         <Reportes onBack={() => setCurrentView('solicitudes')} />
-                    ) : currentView === 'solicitudes' ? (
+                    ) : (isAdminGeneral || isInstitutional) && currentView === 'solicitudes' ? (
                         <div className="admin-card-section">
                             {requestError && (
                                 <div style={{ background: '#4c0519', border: '1px solid #be123c', color: '#ffe4e6', padding: '12px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -670,7 +899,7 @@ const handleDeletePartner = async (partner) => {
                                 <p className="admin-resource-empty">No hay solicitudes de orientación registradas.</p>
                             )}
                         </div>
-                    ) : isAdminGeneral && currentView === 'estadisticas-violencia' ? (
+                    ) : (isAdminGeneral || isInstitutional) && currentView === 'estadisticas-violencia' ? (
                         <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
                             <div style={{ 
                                 background: 'rgba(15, 23, 42, 0.8)', 
@@ -694,66 +923,114 @@ const handleDeletePartner = async (partner) => {
                                 </div>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{ background: '#020617', padding: '6px 12px', borderRadius: '10px', border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>Filtrar institución:</span>
-                                        <select 
-                                            value={selectedGlobalInst}
-                                            onChange={(e) => setSelectedGlobalInst(e.target.value)}
-                                            style={{ background: '#0f172a', color: '#fff', border: 'none', fontSize: '12px', outline: 'none', cursor: 'pointer' }}
-                                        >
-                                            <option value="global">Todas las Instituciones (Global)</option>
-                                            <option value="Instituto Municipal de las Mujeres">Instituto Municipal de las Mujeres</option>
-                                            <option value="Centro de Justicia para las Mujeres">Centro de Justicia para las Mujeres</option>
-                                            <option value="UABCS">UABCS</option>
-                                        </select>
-                                    </div>
-
+                                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>Datos globales y anónimos</span>
                                     <button 
                                         type="button" 
                                         onClick={handleExportPDF}
+                                        disabled={!platformStatistics || isLoadingStatistics || isExportingReport}
+                                        title={!platformStatistics ? 'Las estadísticas aún no están disponibles' : 'Descargar estadísticas y socios en PDF'}
                                         style={{
                                             background: '#7c3aed',
                                             color: '#fff',
                                             border: 'none',
                                             padding: '10px 18px',
                                             borderRadius: '10px',
-                                            cursor: 'pointer',
                                             fontSize: '13px',
                                             fontWeight: '600',
                                             boxShadow: '0 4px 6px -1px rgba(124, 58, 237, 0.3)',
-                                            whiteSpace: 'nowrap'
+                                            whiteSpace: 'nowrap',
+                                            opacity: !platformStatistics || isLoadingStatistics || isExportingReport ? 0.6 : 1,
+                                            cursor: !platformStatistics || isLoadingStatistics || isExportingReport ? 'not-allowed' : 'pointer'
                                         }}
                                     >
-                                        📥 Exportar Reporte PDF
+                                        {isExportingReport ? 'Preparando reporte…' : '📥 Exportar Reporte PDF'}
                                     </button>
                                 </div>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '20px' }}>
-                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', letterSpacing: '0.05em' }}>Violencia Psicológica / Emocional</div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px' }}>
-                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>28</span>
-                                        <span style={{ fontSize: '12px', color: '#f87171', fontWeight: '500' }}>Riesgo Alto</span>
+                            <section className="statistics-summary" aria-label="Totales de la plataforma">
+                                {[
+                                    ['Autoevaluaciones completadas', platformStatistics?.autoevaluaciones],
+                                    ['Reportes registrados', platformStatistics?.reportes],
+                                    ['Solicitudes de orientación', isLoadingRequests ? undefined : orientationRequests.length],
+                                    ['Socios', platformStatistics?.socios],
+                                ].map(([label, count]) => (
+                                    <div className="metric-box" key={label}>
+                                        <span className="metric-box-title">{label}</span>
+                                        <div className="metric-box-content">
+                                            <span className="metric-box-number">
+                                                {count === undefined
+                                                    ? (isLoadingStatistics || isLoadingRequests ? '…' : '—')
+                                                    : count.toLocaleString('es-MX')}
+                                            </span>
+                                            <span className="metric-box-tag">Base de datos</span>
+                                        </div>
                                     </div>
-                                </div>
-                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '20px' }}>
-                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', letterSpacing: '0.05em' }}>Violencia Física / Lesiones</div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px' }}>
-                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>12</span>
-                                        <span style={{ fontSize: '12px', color: '#fbbf24', fontWeight: '500' }}>Crítico</span>
+                                ))}
+                            </section>
+                            {statisticsError && (
+                                <p className="statistics-error" role="alert">{statisticsError}</p>
+                            )}
+
+                            <div className="admin-statistics-panels">
+                                <section className="admin-statistics-panel" aria-labelledby="incidence-title">
+                                    <h3 id="incidence-title" className="admin-statistics-title">📈 Incidencia por tipos de violencia</h3>
+                                    <p className="admin-statistics-description">Tipos señalados en resultados completados; los porcentajes se calculan sobre el total de menciones.</p>
+                                    <div className="admin-statistics-bars">
+                                        {[
+                                            ['Psicológica / Emocional', 'psychological'],
+                                            ['Física', 'physical'],
+                                            ['Sexual', 'sexual'],
+                                            ['Económica', 'economic'],
+                                            ['Digital', 'digital'],
+                                        ].map(([label, color]) => {
+                                            const count = platformStatistics?.incidencia?.[label]
+                                            const total = Object.values(platformStatistics?.incidencia || {}).reduce((sum, value) => sum + value, 0)
+                                            const percentage = total && count !== undefined ? Math.round((count / total) * 100) : 0
+                                            return (
+                                                <div className="admin-statistics-row" key={label}>
+                                                    <div className="admin-statistics-meta">
+                                                        <span>{label}</span>
+                                                        <span>{count === undefined ? (isLoadingStatistics ? '…' : '—') : `${percentage}% · ${count.toLocaleString('es-MX')}`}</span>
+                                                    </div>
+                                                    <div className="admin-statistics-track" aria-hidden="true">
+                                                        <span className={`admin-statistics-fill ${color}`} style={{ width: `${percentage}%` }} />
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
                                     </div>
-                                </div>
-                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '20px' }}>
-                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', letterSpacing: '0.05em' }}>Violencia Digital / Acoso</div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px' }}>
-                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>19</span>
-                                        <span style={{ fontSize: '12px', color: '#c084fc', fontWeight: '500' }}>En incremento</span>
+                                </section>
+
+                                <section className="admin-statistics-panel" aria-labelledby="meter-title">
+                                    <h3 id="meter-title" className="admin-statistics-title">📉 Niveles consultados en el Violentómetro</h3>
+                                    <p className="admin-statistics-description">Selecciones informativas; no representan una detección ni un diagnóstico de riesgo.</p>
+                                    <div className="admin-statistics-bars">
+                                        {[
+                                            ['Alerta Amarilla (Precaución)', 'advertencia', 'yellow'],
+                                            ['Alerta Naranja (Atención / Reacciona)', 'reaccion', 'orange'],
+                                            ['Alerta Roja (Peligro / Urgente)', 'peligro', 'red'],
+                                        ].map(([label, level, color]) => {
+                                            const count = platformStatistics?.violentometro?.[level]
+                                            const total = Object.values(platformStatistics?.violentometro || {}).reduce((sum, value) => sum + value, 0)
+                                            const percentage = total && count !== undefined ? Math.round((count / total) * 100) : 0
+                                            return (
+                                                <div className="admin-statistics-row" key={level}>
+                                                    <div className="admin-statistics-meta">
+                                                        <span>{label}</span>
+                                                        <span>{count === undefined ? (isLoadingStatistics ? '…' : '—') : `${percentage}% · ${count.toLocaleString('es-MX')}`}</span>
+                                                    </div>
+                                                    <div className="admin-statistics-track" aria-hidden="true">
+                                                        <span className={`admin-statistics-fill ${color}`} style={{ width: `${percentage}%` }} />
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
                                     </div>
-                                </div>
+                                </section>
                             </div>
                         </div>
-                    ) : isAdminGeneral && currentView === 'socios' ? (
+                    ) : (isAdminGeneral || isInstitutional) && currentView === 'socios' ? (
                         <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
                             {partnerError && (
                                 <div style={{ background: '#4c0519', border: '1px solid #be123c', color: '#ffe4e6', padding: '12px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -768,6 +1045,7 @@ const handleDeletePartner = async (partner) => {
                                 </div>
                             )}
 
+                            {isAdminGeneral && (
                             <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
                                 <h3 style={{ color: '#fff', fontSize: '18px', marginBottom: '16px' }}>{editingPartnerId ? 'Editar Institución' : 'Registrar nueva institución (Socio)'}</h3>
                                 <form onSubmit={handleSavePartner} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -803,6 +1081,7 @@ const handleDeletePartner = async (partner) => {
                                     </div>
                                 </form>
                             </div>
+                            )}
 
                             <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '24px' }}>
                                 <h3 style={{ color: '#fff', fontSize: '18px', marginBottom: '16px' }}>Instituciones Aliadas Registradas</h3>
@@ -816,7 +1095,7 @@ const handleDeletePartner = async (partner) => {
                                                     <th style={{ padding: '10px' }}>INSTITUCIÓN</th>
                                                     <th style={{ padding: '10px' }}>TIPO DE APOYO</th>
                                                     <th style={{ padding: '10px' }}>ENLACE</th>
-                                                    <th style={{ padding: '10px', textAlign: 'right' }}>ACCIONES</th>
+                                                    {isAdminGeneral && <th style={{ padding: '10px', textAlign: 'right' }}>ACCIONES</th>}
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -829,10 +1108,10 @@ const handleDeletePartner = async (partner) => {
                                                                 {partner.url}
                                                             </a>
                                                         </td>
-                                                        <td style={{ padding: '12px', textAlign: 'right', display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                                        {isAdminGeneral && <td style={{ padding: '12px', textAlign: 'right', display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
                                                             <button type="button" onClick={() => startEditingPartner(partner)} style={{ background: '#1d4ed8', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>Editar</button>
                                                             <button type="button" onClick={() => handleDeletePartner(partner)} style={{ background: '#9f1239', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>Eliminar</button>
-                                                        </td>
+                                                        </td>}
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -878,12 +1157,9 @@ const handleDeletePartner = async (partner) => {
                                         </div>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                             <label style={{ color: '#cbd5e1', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                Institución
-                                                <input required value={userForm.institucion} onChange={(e) => setUserForm({ ...userForm, institucion: e.target.value })} style={{ background: '#020617', border: '1px solid #334155', borderRadius: '10px', padding: '10px', color: '#fff', fontSize: '13px', outline: 'none' }} />
-                                            </label>
-                                            <label style={{ color: '#cbd5e1', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                                 Tipo de Acceso / Rol
-                                                <select value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })} style={{ background: '#020617', border: '1px solid #334155', borderRadius: '10px', padding: '10px', color: '#fff', fontSize: '13px', outline: 'none', cursor: 'pointer' }}>
+                                                <select value={userForm.role} disabled={userForm.email.toLowerCase() === 'carlos@nebula.com'} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })} style={{ background: '#020617', border: '1px solid #334155', borderRadius: '10px', padding: '10px', color: '#fff', fontSize: '13px', outline: 'none', cursor: 'pointer' }}>
+                                                    <option value="usuario">Usuario</option>
                                                     <option value="institucional">Personal Institucional</option>
                                                     <option value="admin">Administrador General</option>
                                                 </select>
@@ -911,9 +1187,9 @@ const handleDeletePartner = async (partner) => {
                                             <thead>
                                                 <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
                                                     <th style={{ padding: '12px' }}>NOMBRE</th>
+                                                    <th style={{ padding: '12px' }}>CORREO</th>
                                                     <th style={{ padding: '12px' }}>ROL</th>
-                                                    <th style={{ padding: '12px' }}>INSTITUCIÓN</th>
-                                                    <th style={{ padding: '12px' }}>ESTADO</th>
+                                                    <th style={{ padding: '12px' }}>REGISTRO</th>
                                                     <th style={{ padding: '12px', textAlign: 'right' }}>ACCIONES</th>
                                                 </tr>
                                             </thead>
@@ -922,19 +1198,23 @@ const handleDeletePartner = async (partner) => {
                                                     <tr key={acc._id} style={{ borderBottom: '1px solid #1e293b', color: '#fff' }}>
                                                         <td style={{ padding: '12px', fontWeight: '500' }}>{acc.nombre}</td>
                                                         <td style={{ padding: '12px', color: '#cbd5e1' }}>
-                                                            {acc.email === 'admin@nebula.com' || acc.role === 'admin' ? 'Administrador General' : 'Personal Institucional'}
+                                                            {acc.email}
                                                         </td>
-                                                        <td style={{ padding: '12px', color: '#94a3b8' }}>{acc.institucion || 'Universidad Autónoma de Baja California Sur'}</td>
                                                         <td style={{ padding: '12px' }}>
-                                                            <span style={{ 
-                                                                color: acc.estado === 'Inactivo' ? '#f87171' : '#4ade80', 
-                                                                background: acc.estado === 'Inactivo' ? 'rgba(248, 113, 113, 0.1)' : 'rgba(74, 222, 128, 0.1)', 
-                                                                padding: '4px 8px', 
-                                                                borderRadius: '6px', 
-                                                                fontSize: '11px' 
-                                                            }}>
-                                                                {acc.estado || 'Activa'}
-                                                            </span>
+                                                            <select
+                                                                aria-label={`Rol de ${acc.nombre}`}
+                                                                value={acc.role || 'usuario'}
+                                                                disabled={Boolean(updatingRoleId) || acc.email.toLowerCase() === 'carlos@nebula.com'}
+                                                                onChange={(event) => handleChangeUserRole(acc._id, event.target.value)}
+                                                                style={{ background: '#020617', border: '1px solid #334155', borderRadius: '8px', padding: '7px 9px', color: '#fff', fontSize: '12px', cursor: 'pointer' }}
+                                                            >
+                                                                <option value="usuario">Usuario</option>
+                                                                <option value="institucional">Personal Institucional</option>
+                                                                <option value="admin">Administrador General</option>
+                                                            </select>
+                                                        </td>
+                                                        <td style={{ padding: '12px', color: '#94a3b8' }}>
+                                                            {acc.createdAt ? new Date(acc.createdAt).toLocaleDateString() : '—'}
                                                         </td>
                                                         <td style={{ padding: '12px', textAlign: 'right', display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
                                                             <button 
@@ -946,15 +1226,9 @@ const handleDeletePartner = async (partner) => {
                                                             </button>
                                                             <button 
                                                                 type="button" 
-                                                                onClick={() => handleToggleStatusUser(acc._id, acc.estado)} 
-                                                                style={{ background: '#d97706', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}
-                                                            >
-                                                                {acc.estado === 'Inactivo' ? 'Activar' : 'Desactivar'}
-                                                            </button>
-                                                            <button 
-                                                                type="button" 
                                                                 onClick={() => handleDeleteUser(acc._id, acc.nombre)} 
-                                                                style={{ background: '#9f1239', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}
+                                                                disabled={acc.email === currentUser.email || acc.email.toLowerCase() === 'carlos@nebula.com'}
+                                                                style={{ background: '#9f1239', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: acc.email === currentUser.email || acc.email.toLowerCase() === 'carlos@nebula.com' ? 'not-allowed' : 'pointer', opacity: acc.email === currentUser.email || acc.email.toLowerCase() === 'carlos@nebula.com' ? 0.5 : 1, fontWeight: '500' }}
                                                             >
                                                                 Eliminar
                                                             </button>
@@ -1054,7 +1328,12 @@ const handleDeletePartner = async (partner) => {
                                 )}
                             </div>
                         </div>
-                    ) : null}
+                    ) : (
+                        <section className="admin-access-denied" role="alert">
+                            <h3>No tienes permisos para acceder a esta sección</h3>
+                            <p>Selecciona una sección habilitada para tu rol o contacta al administrador del sistema.</p>
+                        </section>
+                    )}
                 </div>
             </main>
         </div>

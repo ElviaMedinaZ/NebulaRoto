@@ -3,6 +3,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const AnonymousReport = require("../models/AnonymousReport");
 const verificarToken = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/authorizeRoles");
 
 const router = express.Router();
 const reportTypes = ["Psicológica", "Física", "Sexual", "Económica", "Patrimonial", "Digital", "Otra"];
@@ -117,7 +118,7 @@ router.get("/folio/:folio", async (req, res) => {
   }
 });
 
-router.get("/admin", verificarToken, async (_req, res) => {
+router.get("/admin", verificarToken, authorizeRoles("admin", "institucional"), async (_req, res) => {
   if (databaseUnavailable(res)) return;
 
   try {
@@ -132,7 +133,7 @@ router.get("/admin", verificarToken, async (_req, res) => {
   }
 });
 
-router.patch("/admin/:id/status", verificarToken, async (req, res) => {
+router.patch("/admin/:id/status", verificarToken, authorizeRoles("admin", "institucional"), async (req, res) => {
   if (databaseUnavailable(res)) return;
   if (!mongoose.isValidObjectId(req.params.id)) {
     return res.status(400).json({ mensaje: "El identificador del reporte no es válido." });
@@ -157,7 +158,7 @@ router.patch("/admin/:id/status", verificarToken, async (req, res) => {
   }
 });
 
-router.get("/admin/:id/evidence", verificarToken, async (req, res) => {
+router.get("/admin/:id/evidence", verificarToken, authorizeRoles("admin", "institucional"), async (req, res) => {
   if (databaseUnavailable(res)) return;
   if (!mongoose.isValidObjectId(req.params.id)) {
     return res.status(400).json({ mensaje: "El identificador del reporte no es válido." });
@@ -184,7 +185,7 @@ router.get("/admin/:id/evidence", verificarToken, async (req, res) => {
   }
 });
 
-router.delete("/admin/:id", verificarToken, async (req, res) => {
+router.delete("/admin/:id", verificarToken, authorizeRoles("admin", "institucional"), async (req, res) => {
   if (databaseUnavailable(res)) return;
   if (!mongoose.isValidObjectId(req.params.id)) {
     return res.status(400).json({ mensaje: "El identificador del reporte no es válido." });

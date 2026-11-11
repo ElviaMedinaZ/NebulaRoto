@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { loginAdmin } from './adminAuthApi.js'
 
-// Formulario de acceso para administradores del sistema Nebula.
+// Formulario de acceso para cuentas institucionales y administrativas de Nebula.
 function LoginAdmin({ onBack, onSignup, onAuthenticated, initialError = '' }) {
 	// Conserva errores visibles y evita solicitudes duplicadas mientras valida credenciales.
 	const [error, setError] = useState(initialError)
@@ -25,8 +25,8 @@ function LoginAdmin({ onBack, onSignup, onAuthenticated, initialError = '' }) {
 
 	return (
 		<div className="admin-login-page">
-			{/* Panel visual que identifica la zona protegida de administración. */}
-			<section className="admin-login-visual" aria-label="Acceso administrativo Nebula">
+			{/* Panel visual que identifica el acceso protegido a Nebula. */}
+			<section className="admin-login-visual" aria-label="Inicio de sesión de Nebula">
 				<div className="admin-login-orbit orbit-one" />
 				<div className="admin-login-orbit orbit-two" />
 				<div className="admin-login-visual-content">
@@ -34,8 +34,7 @@ function LoginAdmin({ onBack, onSignup, onAuthenticated, initialError = '' }) {
 					<span className="eyebrow">Zona protegida</span>
 					<h1>Gestión que mantiene activa la red de apoyo.</h1>
 					<p>
-						Ingresa al espacio administrativo de Nebula para mantener actualizados
-						los recursos y servicios de la comunidad.
+						Inicia sesión con tu cuenta institucional o administrativa para continuar.
 					</p>
 					<div className="admin-login-status">
 						<span className="live-dot" />
@@ -52,9 +51,9 @@ function LoginAdmin({ onBack, onSignup, onAuthenticated, initialError = '' }) {
 					</button>
 
 					<div className="admin-login-heading">
-						<span className="eyebrow">Administración</span>
+						<span className="eyebrow">Inicio de sesión</span>
 						<h2>Bienvenido de nuevo</h2>
-						<p>Ingresa tus datos para continuar al panel de gestión.</p>
+						<p>Ingresa tus datos para continuar en Nebula.</p>
 					</div>
 
 					{/* Captura credenciales para enviarlas directamente al servicio de autenticación. */}
@@ -64,7 +63,7 @@ function LoginAdmin({ onBack, onSignup, onAuthenticated, initialError = '' }) {
 							id="admin-email"
 							name="email"
 							type="email"
-							placeholder="admin@nebula.org"
+							placeholder="nombre@ejemplo.com"
 							autoComplete="username"
 							maxLength={254}
 							required
@@ -82,7 +81,7 @@ function LoginAdmin({ onBack, onSignup, onAuthenticated, initialError = '' }) {
 
 						{error && <p className="admin-auth-error" role="alert">{error}</p>}
 						<button type="submit" className="admin-login-submit" disabled={isSubmitting}>
-							{isSubmitting ? 'Validando…' : 'Entrar al panel'}
+							{isSubmitting ? 'Validando…' : 'Iniciar sesión'}
 						</button>
 					</form>
 
@@ -91,7 +90,7 @@ function LoginAdmin({ onBack, onSignup, onAuthenticated, initialError = '' }) {
 					</p>
 
 					<p className="admin-login-switch">
-						Crear Cuenta{' '}
+						¿No tienes cuenta?{' '}
 						<button type="button" onClick={onSignup}>Crear aquí</button>
 					</p>
 				</div>

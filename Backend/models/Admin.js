@@ -24,8 +24,8 @@ const adminSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ["admin", "institucional"],
-    default: "institucional",
+    enum: ["admin", "institucional", "usuario"],
+    default: "usuario",
     required: true
   },
   terminosAceptadosEn: {

@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const Partner = require("../models/Partner");
 const verificarToken = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/authorizeRoles");
 
 const router = express.Router();
 
@@ -54,17 +55,28 @@ router.get("/", async (_req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
-    try {
-        const nuevoSocio = new Partner(req.body);
-        await nuevoSocio.save();
-        res.status(201).json(nuevoSocio);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+router.post("/", verificarToken, authorizeRoles("admin"), async (req, res) => {
+  if (databaseUnavailable(res)) return;
+
+  const { partner, error } = validatePartner(req.body);
+  if (error) return res.status(400).json({ mensaje: error });
+
+  try {
+    const nuevoSocio = await Partner.create(partner);
+    return res.status(201).json({ colaborador: nuevoSocio });
+  } catch (createError) {
+    if (createError.code === 11000) {
+      return res.status(409).json({ mensaje: "Ya existe un colaborador con ese nombre." });
     }
+    if (createError.name === "ValidationError") {
+      return res.status(400).json({ mensaje: "Los datos del colaborador no son válidos." });
+    }
+    console.error("No se pudo crear el colaborador:", createError.message);
+    return res.status(500).json({ mensaje: "No se pudo guardar el colaborador." });
+  }
 });
 
-router.put("/:id", verificarToken, async (req, res) => {
+router.put("/:id", verificarToken, authorizeRoles("admin"), async (req, res) => {
   if (databaseUnavailable(res)) return;
   if (!mongoose.isValidObjectId(req.params.id)) {
     return res.status(400).json({ mensaje: "El identificador del colaborador no es válido." });
@@ -95,7 +107,7 @@ router.put("/:id", verificarToken, async (req, res) => {
   }
 });
 
-router.delete("/:id", verificarToken, async (req, res) => {
+router.delete("/:id", verificarToken, authorizeRoles("admin"), async (req, res) => {
   if (databaseUnavailable(res)) return;
   if (!mongoose.isValidObjectId(req.params.id)) {
     return res.status(400).json({ mensaje: "El identificador del colaborador no es válido." });

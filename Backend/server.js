@@ -14,8 +14,13 @@ const chatRoutes = require("./routes/chatRoutes");
 const orientationResourceRoutes = require("./routes/orientationResourceRoutes");
 const orientationRequestRoutes = require("./routes/orientationRequestRoutes");
 const anonymousReportRoutes = require("./routes/anonymousReportRoutes");
+const assessmentRoutes = require("./routes/assessmentRoutes");
 const partnerRoutes = require("./routes/partnerRoutes");
+const statisticsRoutes = require("./routes/statisticsRoutes");
+const verificarToken = require("./middleware/authMiddleware");
+const authorizeRoles = require("./middleware/authorizeRoles");
 const OrientationResource = require("./models/OrientationResource");
+const AnonymousReport = require("./models/AnonymousReport");
 const Partner = require("./models/Partner");
 const defaultOrientationResources = require("./data/defaultOrientationResources");
 const defaultPartners = require("./data/defaultPartners");
@@ -113,41 +118,30 @@ const Statistic = mongoose.model('Statistic', statisticSchema);
 
 // Endpoint para obtener estadísticas reales desde MongoDB Atlas
 // Endpoint en tu server.js para calcular estadísticas reales basadas en los reportes
-app.get('/api/statistics/real', async (req, res) => {
+app.get('/api/statistics/real', verificarToken, authorizeRoles("admin", "institucional"), async (req, res) => {
     try {
         const { institution } = req.query;
-        let filter = {};
-
-        if (institution && institution !== 'global') {
-            filter.institution = institution; // Asumiendo que tus reportes guardan la institución o zona
+        if (institution && institution !== "global") {
+            return res.status(400).json({ mensaje: "Los reportes actuales no están asociados a una institución." });
         }
 
-        // Suponiendo que tu modelo de reportes se llama 'Report' o 'AnonymousReport'
-        const reports = await Report.find(filter);
+        const [totalReports, groupedReports] = await Promise.all([
+            AnonymousReport.countDocuments(),
+            AnonymousReport.aggregate([
+                { $group: { _id: "$type", count: { $sum: 1 } } }
+            ])
+        ]);
+        const metrics = { psychological: 0, physical: 0, digital: 0 };
+        for (const { _id, count } of groupedReports) {
+            if (_id === "Psicológica") metrics.psychological = count;
+            if (_id === "Física") metrics.physical = count;
+            if (_id === "Digital") metrics.digital = count;
+        }
 
-        // Contadores dinámicos basados en los campos de los reportes reales
-        let psychological = 0;
-        let physical = 0;
-        let digital = 0;
-
-        reports.forEach(report => {
-            // Evaluamos el tipo de violencia reportado
-            const type = (report.violenceType || report.category || '').toLowerCase();
-            if (type.includes('psicológica') || type.includes('emocional')) psychological++;
-            else if (type.includes('física') || type.includes('lesiones')) physical++;
-            else if (type.includes('digital') || type.includes('acoso')) digital++;
-        });
-
-        res.status(200).json({
-            totalReports: reports.length,
-            metrics: {
-                psychological,
-                physical,
-                digital
-            }
-        });
+        return res.status(200).json({ totalReports, metrics });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error("No se pudieron consultar las estadísticas de reportes:", error.message);
+        return res.status(500).json({ mensaje: "No se pudieron cargar las estadísticas de reportes." });
     }
 });
 // ==========================================
@@ -155,7 +149,7 @@ app.get('/api/statistics/real', async (req, res) => {
 // ==========================================
 
 // Obtener todas las cuentas de la base de datos
-app.get('/api/accounts', async (req, res) => {
+app.get('/api/accounts', verificarToken, authorizeRoles("admin"), async (req, res) => {
     try {
         const accounts = await Account.find();
         res.json(accounts);
@@ -165,7 +159,7 @@ app.get('/api/accounts', async (req, res) => {
 });
 
 // Crear una nueva cuenta en MongoDB
-app.post('/api/accounts', async (req, res) => {
+app.post('/api/accounts', verificarToken, authorizeRoles("admin"), async (req, res) => {
     try {
         const newAccount = new Account(req.body);
         const savedAccount = await newAccount.save();
@@ -176,7 +170,7 @@ app.post('/api/accounts', async (req, res) => {
 });
 
 // Actualizar una cuenta por ID
-app.put('/api/accounts/:id', async (req, res) => {
+app.put('/api/accounts/:id', verificarToken, authorizeRoles("admin"), async (req, res) => {
     try {
         const { id } = req.params;
         const updatedAccount = await Account.findByIdAndUpdate(id, req.body, { new: true });
@@ -187,7 +181,7 @@ app.put('/api/accounts/:id', async (req, res) => {
 });
 
 // Eliminar una cuenta por ID
-app.delete('/api/accounts/:id', async (req, res) => {
+app.delete('/api/accounts/:id', verificarToken, authorizeRoles("admin"), async (req, res) => {
     try {
         const { id } = req.params;
         await Account.findByIdAndDelete(id);
@@ -206,6 +200,8 @@ app.use("/api/orientation-requests", orientationRequestRoutes);
 app.use("/api/auth/orientation-requests", orientationRequestRoutes);
 app.use("/api/reports", anonymousReportRoutes);
 app.use("/api/auth/reports", anonymousReportRoutes);
+app.use("/api/assessments", assessmentRoutes);
+app.use("/api/statistics", statisticsRoutes);
 app.use("/api/partners", partnerRoutes);
 app.use("/api/auth/partners", partnerRoutes);
 

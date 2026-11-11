@@ -14,6 +14,7 @@ import Autoevaluacion from './Autoevaluacion.jsx'
 import ReporteModal from './ReporteModal.jsx'
 import ConsultaReporteModal from './ConsultaReporteModal.jsx'
 import { createOrientationRequest } from './orientationRequestsApi.js'
+import { API_URL } from './apiUrl.js'
 import logo from './assets/Logo.png'
 import miImagen from './assets/Circ_AI.png'
 import miImagenParpadeo from './assets/Circ_Ai_Parpadeo.png'
@@ -139,6 +140,23 @@ function Violentometro({ onNavigateToPage }) {
   const [activeLevelId, setActiveLevelId] = useState('advertencia')
   const activeLevel = violentometroLevels.find((level) => level.id === activeLevelId)
 
+  const selectLevel = (levelId) => {
+    if (levelId === activeLevelId) return
+    setActiveLevelId(levelId)
+
+    fetch(`${API_URL}/api/assessments/violentometro-selections`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectionId: window.crypto.randomUUID(), level: levelId }),
+    }).then(async (response) => {
+      if (response.ok) return
+      const payload = await response.json().catch(() => null)
+      throw new Error(payload?.mensaje || 'No se pudo registrar la consulta del Violentómetro.')
+    }).catch((error) => {
+      console.error('No se pudo registrar la consulta del Violentómetro:', error)
+    })
+  }
+
   return (
     <section className="violentometro-section" aria-labelledby="violentometro-title">
       <div className="container">
@@ -160,7 +178,7 @@ function Violentometro({ onNavigateToPage }) {
               style={{ '--level-color': level.color, '--level-tint': level.tint }}
               aria-pressed={activeLevelId === level.id}
               aria-controls="violentometro-details"
-              onClick={() => setActiveLevelId(level.id)}
+              onClick={() => selectLevel(level.id)}
             >
               <span className="violentometro-level-top">
                 <span className="violentometro-marker">{level.marker}</span>

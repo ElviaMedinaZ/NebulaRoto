@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { registerAdmin } from './adminAuthApi.js'
 
-// Formulario de registro para administradores autorizados del proyecto.
+// Formulario público de registro para cuentas de usuario.
 function SingUpAdmin({ onBack, onLogin, onAuthenticated, initialError = '' }) {
 	// Estado de validación visible y control del envío del formulario.
 	const [error, setError] = useState(initialError)
@@ -41,8 +41,8 @@ function SingUpAdmin({ onBack, onLogin, onAuthenticated, initialError = '' }) {
 
 	return (
 		<div className="admin-login-page admin-signup-page">
-			{/* Panel de bienvenida que contextualiza el registro administrativo. */}
-			<section className="admin-login-visual" aria-label="Registro administrativo Nebula">
+			{/* Panel de bienvenida que contextualiza el registro institucional. */}
+			<section className="admin-login-visual" aria-label="Registro de cuenta Nebula">
 				<div className="admin-login-orbit orbit-one" />
 				<div className="admin-login-orbit orbit-two" />
 				<div className="admin-login-visual-content">
@@ -50,8 +50,7 @@ function SingUpAdmin({ onBack, onLogin, onAuthenticated, initialError = '' }) {
 					<span className="eyebrow">Administración Nebula</span>
 					<h1>Construyamos una red de apoyo más fuerte.</h1>
 					<p>
-						Crea tu cuenta administrativa para colaborar en la actualización de
-						recursos y servicios de la comunidad.
+						Crea una cuenta para acceder a las herramientas de Nebula.
 					</p>
 					<div className="admin-login-status">
 						<span className="live-dot" />
@@ -70,10 +69,10 @@ function SingUpAdmin({ onBack, onLogin, onAuthenticated, initialError = '' }) {
 					<div className="admin-login-heading">
 						<span className="eyebrow">Crear cuenta</span>
 						<h2>Únete al equipo</h2>
-						<p>Registra tus datos para solicitar acceso al panel administrativo.</p>
+						<p>Registra tus datos para crear tu cuenta de usuario.</p>
 					</div>
 
-					{/* Recopila los datos de la cuenta; el backend decide si el correo está autorizado. */}
+					{/* El backend asigna el rol de usuario a todas las cuentas de registro público. */}
 					<form className="admin-login-form" onSubmit={handleSubmit}>
 						<label htmlFor="admin-signup-name">Nombre completo</label>
 						<input
@@ -92,7 +91,7 @@ function SingUpAdmin({ onBack, onLogin, onAuthenticated, initialError = '' }) {
 							id="admin-signup-email"
 							name="email"
 							type="email"
-							placeholder="admin@nebula.org"
+							placeholder="nombre@ejemplo.com"
 							autoComplete="email"
 							maxLength={254}
 							required
@@ -134,7 +133,7 @@ function SingUpAdmin({ onBack, onLogin, onAuthenticated, initialError = '' }) {
 					</form>
 
 					<p className="admin-login-note">
-						El registro solo está disponible para correos autorizados por el equipo.
+						Cualquier correo válido puede registrarse. Las cuentas nuevas tienen el rol de usuario.
 					</p>
 					<p className="admin-login-switch">
 						¿Ya tienes una cuenta?{' '}

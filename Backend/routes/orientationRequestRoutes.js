@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const OrientationRequest = require("../models/OrientationRequest");
 const verificarToken = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/authorizeRoles");
 
 const router = express.Router();
 
@@ -56,7 +57,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.get("/", verificarToken, async (_req, res) => {
+router.get("/", verificarToken, authorizeRoles("admin", "institucional"), async (_req, res) => {
   if (databaseUnavailable(res)) return;
 
   try {
@@ -68,7 +69,7 @@ router.get("/", verificarToken, async (_req, res) => {
   }
 });
 
-router.delete("/:id", verificarToken, async (req, res) => {
+router.delete("/:id", verificarToken, authorizeRoles("admin", "institucional"), async (req, res) => {
   if (databaseUnavailable(res)) return;
   if (!mongoose.isValidObjectId(req.params.id)) {
     return res.status(400).json({ mensaje: "El identificador de la solicitud no es válido." });

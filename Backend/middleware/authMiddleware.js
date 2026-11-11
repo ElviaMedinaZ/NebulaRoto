@@ -39,7 +39,7 @@ function verificarToken(req, res, next) {
     }
 
     // Inyecta los datos del usuario en la petición
-    req.admin = { id: payload.sub, email: payload.email, role: payload.role || "institucional" };
+    req.admin = { id: payload.sub, email: payload.email, role: payload.role || "usuario" };
     return next();
   } catch (err) {
     res.clearCookie(COOKIE_NAME, {

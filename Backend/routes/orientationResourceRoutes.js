@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const OrientationResource = require("../models/OrientationResource");
 const verificarToken = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/authorizeRoles");
 
 const router = express.Router();
 const resourceCategories = ["sitios", "multimedia", "documentos"];
@@ -91,7 +92,7 @@ router.get("/", async (_req, res) => {
   }
 });
 
-router.post("/", verificarToken, async (req, res) => {
+router.post("/", verificarToken, authorizeRoles("admin"), async (req, res) => {
   if (databaseUnavailable(res)) return;
 
   const { resource, error } = validateResource(req.body);
@@ -112,7 +113,7 @@ router.post("/", verificarToken, async (req, res) => {
   }
 });
 
-router.put("/:id", verificarToken, async (req, res) => {
+router.put("/:id", verificarToken, authorizeRoles("admin"), async (req, res) => {
   if (databaseUnavailable(res)) return;
   if (!mongoose.isValidObjectId(req.params.id)) {
     return res.status(400).json({ mensaje: "El identificador del recurso no es válido." });
@@ -143,7 +144,7 @@ router.put("/:id", verificarToken, async (req, res) => {
   }
 });
 
-router.delete("/:id", verificarToken, async (req, res) => {
+router.delete("/:id", verificarToken, authorizeRoles("admin"), async (req, res) => {
   if (databaseUnavailable(res)) return;
   if (!mongoose.isValidObjectId(req.params.id)) {
     return res.status(400).json({ mensaje: "El identificador del recurso no es válido." });

@@ -29,7 +29,7 @@ export function loginAdmin(credentials) {
 	})
 }
 
-// Solicita crear una cuenta para un correo autorizado por el backend.
+// Registra una cuenta institucional con los datos proporcionados.
 export function registerAdmin(credentials) {
 	return request('/register', {
 		method: 'POST',
