@@ -101,7 +101,7 @@ El archivo `render.yaml` configura un Web Service con `Backend/` como directorio
 1. En Render, crea un **Blueprint** conectado a este repositorio y confirma la configuración de `render.yaml`.
 2. Completa `MONGODB_URI` con la URI de MongoDB Atlas y `FRONTEND_URL` con el origen exacto de Vercel (por ejemplo, `https://tu-sitio.vercel.app`). Render genera `JWT_SECRET`.
 3. En MongoDB Atlas, habilita el acceso de red desde el servicio y confirma que la URI y el usuario de base de datos sean válidos.
-4. Espera a que `/health` responda `200`. Si Render asigna una URL distinta de `https://proyecto-nebula-3.onrender.com`, actualiza el destino de `Frontend/vercel.json` con la URL asignada.
+4. Espera a que `/health` responda `200`. Si Render asigna una URL distinta de `https://nebularoto.onrender.com`, actualiza el destino de `Frontend/vercel.json` con la URL asignada.
 
 No agregues secretos al repositorio. Las variables de Render se configuran en el panel y el puerto lo asigna el proveedor.
 

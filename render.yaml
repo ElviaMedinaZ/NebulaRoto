@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: proyecto-nebula-3
+    name: nebularoto
     runtime: node
     plan: free
     rootDir: Backend
