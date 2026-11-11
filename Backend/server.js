@@ -1,3 +1,5 @@
+
+
 const path = require("node:path");
 const dotenv = require("dotenv");
 const express = require("express");
@@ -17,6 +19,7 @@ const OrientationResource = require("./models/OrientationResource");
 const Partner = require("./models/Partner");
 const defaultOrientationResources = require("./data/defaultOrientationResources");
 const defaultPartners = require("./data/defaultPartners");
+const Account = require("./models/Account");
 const app = express();
 app.disable("x-powered-by");
 
@@ -46,6 +49,7 @@ const frontendOrigins = (process.env.FRONTEND_URL || "")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+
 app.use(cors({
     origin(origin, callback) {
         const isConfiguredOrigin = frontendOrigins.includes(origin);
@@ -64,6 +68,7 @@ app.use(cors({
     },
     credentials: true
 }));
+
 app.use(express.json({ limit: "4mb" }));
 
 const databaseStates = {
@@ -96,6 +101,102 @@ app.get("/health", (_req, res) => {
     });
 });
 
+const statisticSchema = new mongoose.Schema({
+    institution: String,
+    category: String,
+    cases: Number,
+    riskLevel: String,
+    updatedAt: { type: Date, default: Date.now }
+});
+
+const Statistic = mongoose.model('Statistic', statisticSchema);
+
+// Endpoint para obtener estadísticas reales desde MongoDB Atlas
+// Endpoint en tu server.js para calcular estadísticas reales basadas en los reportes
+app.get('/api/statistics/real', async (req, res) => {
+    try {
+        const { institution } = req.query;
+        let filter = {};
+
+        if (institution && institution !== 'global') {
+            filter.institution = institution; // Asumiendo que tus reportes guardan la institución o zona
+        }
+
+        // Suponiendo que tu modelo de reportes se llama 'Report' o 'AnonymousReport'
+        const reports = await Report.find(filter);
+
+        // Contadores dinámicos basados en los campos de los reportes reales
+        let psychological = 0;
+        let physical = 0;
+        let digital = 0;
+
+        reports.forEach(report => {
+            // Evaluamos el tipo de violencia reportado
+            const type = (report.violenceType || report.category || '').toLowerCase();
+            if (type.includes('psicológica') || type.includes('emocional')) psychological++;
+            else if (type.includes('física') || type.includes('lesiones')) physical++;
+            else if (type.includes('digital') || type.includes('acoso')) digital++;
+        });
+
+        res.status(200).json({
+            totalReports: reports.length,
+            metrics: {
+                psychological,
+                physical,
+                digital
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// ==========================================
+// ENDPOINTS DE CUENTAS (CONECTADOS A MONGODB)
+// ==========================================
+
+// Obtener todas las cuentas de la base de datos
+app.get('/api/accounts', async (req, res) => {
+    try {
+        const accounts = await Account.find();
+        res.json(accounts);
+    } catch (error) {
+        res.status(500).json({ error: "Error al obtener las cuentas de la base de datos" });
+    }
+});
+
+// Crear una nueva cuenta en MongoDB
+app.post('/api/accounts', async (req, res) => {
+    try {
+        const newAccount = new Account(req.body);
+        const savedAccount = await newAccount.save();
+        res.status(201).json(savedAccount);
+    } catch (error) {
+        res.status(400).json({ error: "Error al registrar la cuenta en la base de datos" });
+    }
+});
+
+// Actualizar una cuenta por ID
+app.put('/api/accounts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updatedAccount = await Account.findByIdAndUpdate(id, req.body, { new: true });
+        res.json(updatedAccount);
+    } catch (error) {
+        res.status(400).json({ error: "Error al actualizar la cuenta" });
+    }
+});
+
+// Eliminar una cuenta por ID
+app.delete('/api/accounts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await Account.findByIdAndDelete(id);
+        res.json({ success: true, id });
+    } catch (error) {
+        res.status(400).json({ error: "Error al eliminar la cuenta" });
+    }
+});
+
 // Monta los endpoints de autenticación bajo un prefijo común.
 app.use("/api/auth", authRoutes);
 app.use("/api/chat", chatRoutes);
@@ -115,10 +216,7 @@ app.use((_req, res) => {
 
 // Conecta Mongoose a la URI privada cargada desde el entorno del backend o usa el Atlas por defecto.
 async function connectDatabase() {
-    // Cadena de conexión por defecto extraída de tus credenciales de Atlas
     const defaultAtlasUri = "mongodb+srv://cjimenez20_db_user:baxdvJOFcVUf1GWQ@nebula.aq2h67x.mongodb.net/nebula?retryWrites=true&w=majority";
-    
-    // Si existe la variable en el entorno la usa, si no, se conecta automáticamente al clúster fijo
     const uri = process.env.MONGODB_URI || process.env.MONGO_URI || defaultAtlasUri;
 
     if (uri === defaultAtlasUri) {
