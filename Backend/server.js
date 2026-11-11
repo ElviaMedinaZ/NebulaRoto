@@ -51,7 +51,9 @@ app.use(cors({
         const isConfiguredOrigin = frontendOrigins.includes(origin);
         const isLocalDevelopmentOrigin = origin === "http://localhost:5173"
             || origin === "http://localhost:8080"
+            || origin === "http://localhost:5174"
             || origin === "http://127.0.0.1:5173"
+            || origin === "http://127.0.0.1:2000"
             || origin === "http://127.0.0.1:8080";
 
         if (!origin || isConfiguredOrigin || isLocalDevelopmentOrigin || isPrivateLanOrigin(origin)) {
@@ -111,17 +113,22 @@ app.use((_req, res) => {
     res.status(404).json({ error: "Ruta no encontrada" });
 });
 
-// Conecta Mongoose a la URI privada cargada desde el entorno del backend.
+// Conecta Mongoose a la URI privada cargada desde el entorno del backend o usa el Atlas por defecto.
 async function connectDatabase() {
-    const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
-    if (!uri) {
-        console.error("MONGODB_URI no está configurada; el servidor iniciará sin conexión a MongoDB.");
-        return;
+    // Cadena de conexión por defecto extraída de tus credenciales de Atlas
+    const defaultAtlasUri = "mongodb+srv://cjimenez20_db_user:baxdvJOFcVUf1GWQ@nebula.aq2h67x.mongodb.net/nebula?retryWrites=true&w=majority";
+    
+    // Si existe la variable en el entorno la usa, si no, se conecta automáticamente al clúster fijo
+    const uri = process.env.MONGODB_URI || process.env.MONGO_URI || defaultAtlasUri;
+
+    if (uri === defaultAtlasUri) {
+        console.log("MONGODB_URI no detectada en .env. Conectando automáticamente al clúster de Atlas...");
     }
 
     try {
         await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
-        console.log("MongoDB conectado.");
+        console.log("MongoDB se ha conectado correctamente.");
+
         const appMetadata = mongoose.connection.collection("appMetadata");
         const initialization = await appMetadata.findOne({ _id: "orientation-resources-v1" });
         if (!initialization) {
@@ -152,7 +159,7 @@ async function connectDatabase() {
     }
 }
 
-// Inicia el servidor HTTP y comienza la conexión a la base de datos.
+// Inicia el servidor HTTP y comienza a realizar la conexión a la bdd
 function startServer() {
     const port = Number(process.env.PORT) || 3000;
     const server = app.listen(port, () => {
@@ -168,7 +175,7 @@ function startServer() {
     return server;
 }
 
-// Permite importar la aplicación en pruebas sin abrir automáticamente un puerto.
+// Permite importar la aplicación en pruebas sin abrir automáticamente un puerto
 if (require.main === module) {
     startServer();
 }

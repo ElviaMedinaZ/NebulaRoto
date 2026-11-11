@@ -1,0 +1,49 @@
+const jwt = require("jsonwebtoken");
+const { COOKIE_NAME } = require("../controllers/authController");
+
+// Extrae la cookie de sesión de la cabecera HTTP sin depender de almacenamiento cliente.
+function readCookie(req, name) {
+  const cookieHeader = req.headers.cookie || "";
+  const cookie = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+
+  return cookie ? cookie.slice(name.length + 1) : null;
+}
+
+// Verifica firma, audiencia y rol del JWT antes de permitir acceso a rutas privadas.
+function verificarToken(req, res, next) {
+  const token = readCookie(req, COOKIE_NAME);
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret || secret.length < 32) {
+    return res.status(503).json({ mensaje: "La autenticación no está configurada correctamente." });
+  }
+  if (!token) {
+    return res.status(401).json({ mensaje: "Inicia sesión para continuar." });
+  }
+
+  try {
+    const payload = jwt.verify(token, secret, {
+      issuer: "nebula-api",
+      audience: "nebula-admin"
+    });
+    if (payload.role !== "admin" || typeof payload.sub !== "string") {
+      return res.status(403).json({ mensaje: "No tienes permiso para acceder." });
+    }
+
+    req.admin = { id: payload.sub, email: payload.email };
+    return next();
+  } catch {
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: process.env.NODE_ENV === "production" ? "/" : "/api/auth"
+    });
+    return res.status(401).json({ mensaje: "La sesión expiró. Inicia sesión nuevamente." });
+  }
+}
+
+module.exports = verificarToken;
