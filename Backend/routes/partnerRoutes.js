@@ -54,25 +54,14 @@ router.get("/", async (_req, res) => {
   }
 });
 
-router.post("/", verificarToken, async (req, res) => {
-  if (databaseUnavailable(res)) return;
-
-  const { partner, error } = validatePartner(req.body);
-  if (error) return res.status(400).json({ mensaje: error });
-
-  try {
-    const createdPartner = await Partner.create(partner);
-    return res.status(201).json({ colaborador: createdPartner });
-  } catch (createError) {
-    if (createError.code === 11000) {
-      return res.status(409).json({ mensaje: "Ya existe un colaborador con ese nombre." });
+router.post('/', async (req, res) => {
+    try {
+        const nuevoSocio = new Partner(req.body);
+        await nuevoSocio.save();
+        res.status(201).json(nuevoSocio);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
-    if (createError.name === "ValidationError") {
-      return res.status(400).json({ mensaje: "Los datos del colaborador no son válidos." });
-    }
-    console.error("No se pudo agregar el colaborador:", createError.message);
-    return res.status(500).json({ mensaje: "No se pudo guardar el colaborador." });
-  }
 });
 
 router.put("/:id", verificarToken, async (req, res) => {

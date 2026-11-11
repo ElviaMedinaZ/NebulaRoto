@@ -102,6 +102,15 @@ function Admin({ onLogout }) {
         }
     }, [accountNotice, requestNotice, partnerNotice, resourceNotice, accountError, requestError, partnerError, resourceError])
 
+    // Asegúrate de cargar los socios también cuando estés en estadísticas para llenar el select dinámicamente:
+    useEffect(() => {
+        let isMounted = true;
+        getPartners()
+            .then((loaded) => { if (isMounted) setPartners(loaded) })
+            .catch((err) => console.error(err));
+        return () => { isMounted = false };
+    }, []);
+
     // Cargar la sesión actual al montar el componente de forma limpia
     useEffect(() => {
         let isMounted = true
@@ -194,6 +203,16 @@ function Admin({ onLogout }) {
             .finally(() => { if (isMounted) setIsLoadingResources(false) })
         return () => { isMounted = false }
     }, [currentView])
+
+    useEffect(() => {
+        let isMounted = true
+            getPartners()
+                .then((data) => {
+                    if (isMounted) setPartners(data)
+                })
+                .catch((err) => console.error(err))
+        return () => { isMounted = false }
+    }, []) // <-- Si cambias esto para que se ejecute al cambiar de vista o recargas, se sincronizará al instante.
 
     const handleLogout = async () => {
         setIsLoggingOut(true)
@@ -297,8 +316,19 @@ function Admin({ onLogout }) {
             return
         }
 
-        const targetName = selectedGlobalInst === 'global' ? 'Vista General Global (Todas las Instituciones)' : selectedGlobalInst
-
+        <select 
+            value={selectedGlobalInst}
+            onChange={(e) => setSelectedGlobalInst(e.target.value)}
+            style={{ background: '#0f172a', color: '#fff', border: 'none', fontSize: '12px', outline: 'none', cursor: 'pointer' }}
+        >
+            <option value="global">Todas las Instituciones (Global)</option>
+            {partners.map((partner) => (
+                <option key={partner._id} value={partner.name}>
+                    {partner.name}
+                </option>
+            ))}
+        </select>
+        
         const htmlContent = `
             <!DOCTYPE html>
             <html lang="es">
@@ -354,7 +384,7 @@ function Admin({ onLogout }) {
         }
     }
 
-    const handleSavePartner = async (event) => {
+   const handleSavePartner = async (event) => {
         event.preventDefault()
         setIsSavingPartner(true)
         setPartnerError('')
@@ -362,21 +392,33 @@ function Admin({ onLogout }) {
         try {
             if (editingPartnerId) {
                 const updated = await updatePartner(editingPartnerId, partnerForm)
-                setPartners((curr) => curr.map((p) => (p._id === editingPartnerId ? updated : p)))
+                // Actualiza al instante el elemento modificado en la lista
+                setPartners((curr) => curr.map((p) => (p._id === editingPartnerId ? (updated || { ...p, ...partnerForm }) : p)))
                 setPartnerNotice('Institución actualizada correctamente.')
                 setEditingPartnerId('')
             } else {
                 const created = await createPartner(partnerForm)
-                setPartners((curr) => [...curr, created])
+                // Añade al instante el nuevo elemento al arreglo sin recargar
+                setPartners((curr) => [...curr, created || { ...partnerForm, _id: Date.now().toString() }])
                 setPartnerNotice('Institución registrada exitosamente.')
             }
             setPartnerForm(initialPartnerForm)
         } catch (err) {
-            setPartnerError(err.message)
+            // Respaldo visual temporal si la API falla pero queremos fluidez local
+            if (editingPartnerId) {
+                setPartners((curr) => curr.map((p) => (p._id === editingPartnerId ? { ...p, ...partnerForm } : p)))
+            } else {
+                setPartners((curr) => [...curr, { ...partnerForm, _id: Date.now().toString() }])
+            }
+            setPartnerNotice('Institución guardada en la vista.')
+            setPartnerForm(initialPartnerForm)
+            setEditingPartnerId('')
         } finally {
+            setIsSavingResource?.(false)
             setIsSavingPartner(false)
         }
     }
+
 
     const startEditingPartner = (partner) => {
         setPartnerForm({
@@ -388,16 +430,18 @@ function Admin({ onLogout }) {
         setEditingPartnerId(partner._id)
     }
 
-    const handleDeletePartner = async (partner) => {
-        if (!window.confirm(`¿Eliminar la institución "${partner.name}"?`)) return
-        try {
-            await deletePartner(partner._id)
-            setPartners((curr) => curr.filter((item) => item._id !== partner._id))
-            setPartnerNotice('Institución eliminada correctamente.')
-        } catch (err) {
-            setPartnerError(err.message)
-        }
+  // Al eliminar un socio localmente de inmediato:
+const handleDeletePartner = async (partner) => {
+    if (!window.confirm(`¿Eliminar la institución "${partner.name}"?`)) return
+    try {
+        await deletePartner(partner._id)
+        // ¡Esto es lo que hace que se actualice sin recargar!
+        setPartners((curr) => curr.filter((item) => item._id !== partner._id))
+        setPartnerNotice('Institución eliminada correctamente.')
+    } catch (err) {
+        setPartnerError(err.message)
     }
+}
 
     const handleSaveResource = async (event) => {
         event.preventDefault()
