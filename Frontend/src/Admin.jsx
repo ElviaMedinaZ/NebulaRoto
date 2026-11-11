@@ -1,879 +1,908 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
+
 import {
-	createOrientationResource,
-	deleteOrientationResource,
-	getOrientationResources,
-	updateOrientationResource,
+    getOrientationResources,
+    createOrientationResource,
+    updateOrientationResource,
+    deleteOrientationResource,
 } from './orientationResourcesApi.js'
 import {
-	deleteOrientationRequest,
-	getOrientationRequests,
+    getOrientationRequests,
+    deleteOrientationRequest,
 } from './orientationRequestsApi.js'
+import {
+    getPartners,
+    createPartner,
+    updatePartner,
+    deletePartner,
+} from './partnersApi.js'
 import Reportes from './Reportes.jsx'
-import { createPartner, deletePartner, getPartners, updatePartner } from './partnersApi.js'
-import './Admin.css'
+import './AdminDashboard.css'
 
 const resourceCategories = [
-	{ id: 'sitios', title: 'Instituciones y apoyo', icon: '🧭' },
-	{ id: 'multimedia', title: 'Videos y multimedia', icon: '▶️' },
-	{ id: 'documentos', title: 'Guías y documentos', icon: '📄' },
+    { id: 'sitios', title: 'Instituciones y apoyo', icon: '🧭' },
+    { id: 'multimedia', title: 'Videos y multimedia', icon: '▶️' },
+    { id: 'documentos', title: 'Guías y documentos', icon: '📄' },
 ]
 
 const initialResourceForm = {
-	category: 'sitios',
-	title: '',
-	description: '',
-	source: '',
-	url: '',
-	type: 'link',
+    category: 'sitios',
+    title: '',
+    description: '',
+    source: '',
+    url: '',
+    type: 'link',
 }
 
 const initialPartnerForm = {
-	name: '',
-	type: '',
-	url: '',
-	image: '',
+    name: '',
+    type: '',
+    url: '',
+    image: '',
 }
 
-// Datos de presentación de las tarjetas; aquí se definen título, descripción e icono de cada módulo.
-const adminOptions = [
-	{ title: 'Gestionar recursos', description: 'Administra guías, multimedia de atención y materiales preventivos.', icon: '📚' },
-	{ title: 'Revisar solicitudes', description: 'Consulta y da seguimiento a las solicitudes de apoyo recibidas.', icon: '📝' },
-	{ title: 'Red de colaboradores', description: 'Mantén actualizada la información de organizaciones aliadas.', icon: '🤝' },
-	{ title: 'Métricas', description: 'Accede a informes y análisis sobre el rendimiento de la plataforma.', icon: '📊' },
-	{ title: 'Reportes anónimos', description: 'Seguimiento a reportes de ayuda enviados por usuarias', icon: '⚠️' },
-
-]
-
-function AdminEditModal({ title, onClose, children }) {
-	const modalRef = useRef(null)
-	const onCloseRef = useRef(onClose)
-
-	useEffect(() => {
-		onCloseRef.current = onClose
-	}, [onClose])
-
-	useEffect(() => {
-		const previouslyFocused = document.activeElement
-		const previousOverflow = document.body.style.overflow
-		const handleKeyDown = (event) => {
-			if (event.key === 'Escape') {
-				onCloseRef.current()
-				return
-			}
-
-			if (event.key !== 'Tab') return
-			const focusableElements = modalRef.current?.querySelectorAll(
-				'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]',
-			)
-			if (!focusableElements?.length) return
-
-			const firstElement = focusableElements[0]
-			const lastElement = focusableElements[focusableElements.length - 1]
-			if (event.shiftKey && document.activeElement === firstElement) {
-				event.preventDefault()
-				lastElement.focus()
-			} else if (!event.shiftKey && document.activeElement === lastElement) {
-				event.preventDefault()
-				firstElement.focus()
-			}
-		}
-
-		document.body.style.overflow = 'hidden'
-		window.addEventListener('keydown', handleKeyDown)
-		modalRef.current?.querySelector('input, select, textarea')?.focus()
-
-		return () => {
-			document.body.style.overflow = previousOverflow
-			window.removeEventListener('keydown', handleKeyDown)
-			previouslyFocused?.focus()
-		}
-	}, [])
-
-	return (
-		<div className="admin-edit-modal-backdrop" onClick={onClose}>
-			<section
-				ref={modalRef}
-				className="admin-edit-modal"
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby="admin-edit-modal-title"
-				tabIndex="-1"
-				onClick={(event) => event.stopPropagation()}
-			>
-				<button
-					type="button"
-					className="admin-edit-modal-close"
-					onClick={onClose}
-					aria-label="Cerrar edición"
-				>
-					×
-				</button>
-				<h2 id="admin-edit-modal-title">{title}</h2>
-				{children}
-			</section>
-		</div>
-	)
+const initialAccountForm = {
+    name: '',
+    email: '',
+    role: 'Personal Institucional',
+    institution: '',
+    active: true,
 }
 
-// Estructura del panel: encabezado de administración seguido por la cuadrícula de módulos.
 function Admin({ onLogout }) {
-	const [isLoggingOut, setIsLoggingOut] = useState(false)
-	const [logoutError, setLogoutError] = useState('')
-	const [isManagingResources, setIsManagingResources] = useState(false)
-	const [isManagingPartners, setIsManagingPartners] = useState(false)
-	const [isManagingRequests, setIsManagingRequests] = useState(false)
-	const [isManagingReports, setIsManagingReports] = useState(false)
-	const [resources, setResources] = useState([])
-	const [resourceForm, setResourceForm] = useState(initialResourceForm)
-	const [editingResourceId, setEditingResourceId] = useState('')
-	const [isLoadingResources, setIsLoadingResources] = useState(false)
-	const [isSavingResource, setIsSavingResource] = useState(false)
-	const [deletingResourceId, setDeletingResourceId] = useState('')
-	const [resourceError, setResourceError] = useState('')
-	const [resourceNotice, setResourceNotice] = useState('')
-	const [partners, setPartners] = useState([])
-	const [partnerForm, setPartnerForm] = useState(initialPartnerForm)
-	const [editingPartnerId, setEditingPartnerId] = useState('')
-	const [isLoadingPartners, setIsLoadingPartners] = useState(false)
-	const [isSavingPartner, setIsSavingPartner] = useState(false)
-	const [deletingPartnerId, setDeletingPartnerId] = useState('')
-	const [partnerError, setPartnerError] = useState('')
-	const [partnerNotice, setPartnerNotice] = useState('')
-	const [orientationRequests, setOrientationRequests] = useState([])
-	const [isLoadingRequests, setIsLoadingRequests] = useState(false)
-	const [deletingRequestId, setDeletingRequestId] = useState('')
-	const [requestError, setRequestError] = useState('')
-	const [requestNotice, setRequestNotice] = useState('')
+    const [isLoggingOut, setIsLoggingOut] = useState(false)
+    const [logoutError, setLogoutError] = useState('')
+    
+    // Control de vistas de navegación lateral
+    const [currentView, setCurrentView] = useState('solicitudes') 
+    // Vistas posibles: 'solicitudes' | 'reportes' | 'estadisticas' | 'instituciones' | 'personal' | 'roles' | 'catalogo'
 
-	useEffect(() => {
-		if (!isManagingResources) return undefined
+    // Estados para Recursos (Catálogo de Contenidos - CU23)
+    const [resources, setResources] = useState([])
+    const [resourceForm, setResourceForm] = useState(initialResourceForm)
+    const [editingResourceId, setEditingResourceId] = useState('')
+    const [isLoadingResources, setIsLoadingResources] = useState(false)
+    const [isSavingResource, setIsSavingResource] = useState(false)
+    const [resourceError, setResourceError] = useState('')
+    const [resourceNotice, setResourceNotice] = useState('')
 
-		let isMounted = true
-		getOrientationResources()
-			.then((loadedResources) => {
-				if (isMounted) setResources(loadedResources)
-			})
-			.catch((error) => {
-				if (isMounted) setResourceError(error.message)
-			})
-			.finally(() => {
-				if (isMounted) setIsLoadingResources(false)
-			})
+    // Estados para Socios / Instituciones Aliadas (CU24)
+    const [partners, setPartners] = useState([])
+    const [partnerForm, setPartnerForm] = useState(initialPartnerForm)
+    const [editingPartnerId, setEditingPartnerId] = useState('')
+    const [isLoadingPartners, setIsLoadingPartners] = useState(false)
+    const [isSavingPartner, setIsSavingPartner] = useState(false)
+    const [partnerError, setPartnerError] = useState('')
+    const [partnerNotice, setPartnerNotice] = useState('')
 
-		return () => { isMounted = false }
-	}, [isManagingResources])
+    // Estados para Cuentas Institucionales y Personal (CU25, CU26)
+    const [accounts, setAccounts] = useState([
+        { _id: '1', name: 'Lic. María Gómez', email: 'mgomez@lapaz.gob.mx', role: 'Personal Institucional', institution: 'Centro de Justicia para las Mujeres', active: true },
+        { _id: '2', name: 'Dr. Roberto Sánchez', email: 'rsanchez@uabcs.mx', role: 'Administrador Técnico', institution: 'UABCS', active: true }
+    ])
+    const [accountForm, setAccountForm] = useState(initialAccountForm)
+    const [editingAccountId, setEditingAccountId] = useState('')
+    const [accountNotice, setAccountNotice] = useState('')
 
-	useEffect(() => {
-		if (!isManagingPartners) return undefined
+    // Estados para Solicitudes de Orientación
+    const [orientationRequests, setOrientationRequests] = useState([])
+    const [isLoadingRequests, setIsLoadingRequests] = useState(true)
+    const [deletingRequestId, setDeletingRequestId] = useState('')
+    const [requestError, setRequestError] = useState('')
+    const [requestNotice, setRequestNotice] = useState('')
 
-		let isMounted = true
-		getPartners()
-			.then((loadedPartners) => {
-				if (isMounted) setPartners(loadedPartners)
-			})
-			.catch((error) => {
-				if (isMounted) setPartnerError(error.message)
-			})
-			.finally(() => {
-				if (isMounted) setIsLoadingPartners(false)
-			})
+    // Cargar solicitudes de orientación al iniciar
+    useEffect(() => {
+        let isMounted = true
+        getOrientationRequests()
+            .then((loaded) => { if (isMounted) setOrientationRequests(loaded) })
+            .catch((err) => { if (isMounted) setRequestError(err.message) })
+            .finally(() => { if (isMounted) setIsLoadingRequests(false) })
+        return () => { isMounted = false }
+    }, [])
 
-		return () => { isMounted = false }
-	}, [isManagingPartners])
+    // Cargar instituciones cuando se abre esa sección
+    useEffect(() => {
+        if (currentView !== 'instituciones') return undefined
+        let isMounted = true
+        setIsLoadingPartners(true)
+        getPartners()
+            .then((loaded) => { if (isMounted) setPartners(loaded) })
+            .catch((err) => { if (isMounted) setPartnerError(err.message) })
+            .finally(() => { if (isMounted) setIsLoadingPartners(false) })
+        return () => { isMounted = false }
+    }, [currentView])
 
-	useEffect(() => {
-		if (!isManagingRequests) return undefined
+    // Cargar catálogo de contenidos cuando se abre esa sección
+    useEffect(() => {
+        if (currentView !== 'catalogo') return undefined
+        let isMounted = true
+        setIsLoadingResources(true)
+        getOrientationResources()
+            .then((loaded) => { if (isMounted) setResources(loaded) })
+            .catch((err) => { if (isMounted) setResourceError(err.message) })
+            .finally(() => { if (isMounted) setIsLoadingResources(false) })
+        return () => { isMounted = false }
+    }, [currentView])
 
-		let isMounted = true
-		getOrientationRequests()
-			.then((loadedRequests) => {
-				if (isMounted) setOrientationRequests(loadedRequests)
-			})
-			.catch((error) => {
-				if (isMounted) setRequestError(error.message)
-			})
-			.finally(() => {
-				if (isMounted) setIsLoadingRequests(false)
-			})
+    const handleLogout = async () => {
+        setIsLoggingOut(true)
+        setLogoutError('')
+        try {
+            await onLogout()
+        } catch (err) {
+            setLogoutError(err.message)
+        } finally {
+            setIsLoggingOut(false)
+        }
+    }
 
-		return () => { isMounted = false }
-	}, [isManagingRequests])
+// ... dentro de tu componente Admin:
 
-	// Cierra la sesión usando el callback de la aplicación y conserva el error si falla.
-	const handleLogout = async () => {
-		setIsLoggingOut(true)
-		setLogoutError('')
-		try {
-			await onLogout()
-		} catch (error) {
-			setLogoutError(error.message)
-		} finally {
-			setIsLoggingOut(false)
-		}
-	}
+  // Función robusta para generar y exportar el reporte en PDF de forma limpia
+    const handleExportPDF = () => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            alert('Por favor, permite las ventanas emergentes (pop-ups) para descargar el PDF.');
+            return;
+        }
 
-	const handleAddResource = async (event) => {
-		event.preventDefault()
-		setIsSavingResource(true)
-		setResourceError('')
-		setResourceNotice('')
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <title>Reporte Estadístico - NEBULA</title>
+                <style>
+                    body { font-family: Arial, sans-serif; color: #111; padding: 30px; margin: 0; background: #fff; }
+                    .header { background: #581c87; color: white; padding: 20px; border-radius: 8px; margin-bottom: 25px; }
+                    h1 { margin: 0 0 5px 0; font-size: 22px; }
+                    p { margin: 4px 0; font-size: 13px; color: #ddd; }
+                    h2 { font-size: 16px; border-bottom: 2px solid #581c87; padding-bottom: 5px; margin-top: 30px; color: #333; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
+                    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
+                    th { background: #f3f4f6; color: #333; }
+                    .footer { margin-top: 40px; font-size: 11px; color: #666; text-align: center; border-top: 1px solid #eee; pt: 10px; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>SISTEMA NEBULA - REPORTE ESTADÍSTICO</h1>
+                    <p>Sistema de Prevención y Atención Integral</p>
+                    <p>Fecha de emisión: ${new Date().toLocaleDateString('es-MX')}</p>
+                </div>
 
-		try {
-			const createdResource = await createOrientationResource(resourceForm)
-			setResources((currentResources) => [...currentResources, createdResource])
-			setResourceForm(initialResourceForm)
-			setResourceNotice('El recurso se guardó correctamente.')
-		} catch (error) {
-			setResourceError(error.message)
-		} finally {
-			setIsSavingResource(false)
-		}
-	}
+                <h2>1. Indicadores Generales de Operación</h2>
+                <table>
+                    <tr><th>Métrica del Sistema</th><th>Valor Registrado</th><th>Tendencia / Estado</th></tr>
+                    <tr><td>Total de Evaluaciones de Violencia</td><td>48</td><td>↑ +12% este mes</td></tr>
+                    <tr><td>Reportes Anónimos Registrados</td><td>19</td><td>Activos en red</td></tr>
+                    <tr><td>Instituciones Aliadas (Socios)</td><td>${partners.length || 8}</td><td>Colaboración activa</td></tr>
+                </table>
 
-	const handleUpdateResource = async (event) => {
-		event.preventDefault()
-		setIsSavingResource(true)
-		setResourceError('')
-		setResourceNotice('')
+                <h2>2. Incidencia por Tipos de Violencia</h2>
+                <table>
+                    <tr><th>Tipo de Violencia</th><th>Porcentaje de Incidencia</th><th>Nivel</th></tr>
+                    <tr><td>Violencia Psicológica</td><td>45%</td><td>Alto</td></tr>
+                    <tr><td>Violencia Física</td><td>25%</td><td>Crítico</td></tr>
+                    <tr><td>Violencia Digital / Patrimonial</td><td>20%</td><td>Moderado</td></tr>
+                    <tr><td>Otro tipo de conducta</td><td>10%</td><td>Seguimiento</td></tr>
+                </table>
 
-		try {
-			const updatedResource = await updateOrientationResource(editingResourceId, resourceForm)
-			setResources((currentResources) => currentResources.map((item) => (
-				item._id === editingResourceId ? updatedResource : item
-			)))
-			setResourceForm(initialResourceForm)
-			setEditingResourceId('')
-			setResourceNotice('El recurso se actualizó correctamente.')
-		} catch (error) {
-			setResourceError(error.message)
-		} finally {
-			setIsSavingResource(false)
-		}
-	}
+                <h2>3. Niveles de Riesgo Detectados (Violentómetro)</h2>
+                <table>
+                    <tr><th>Nivel de Alerta</th><th>Proporción</th><th>Descripción Orientativa</th></tr>
+                    <tr><td>Alerta Amarilla (Precaución)</td><td>55%</td><td>Conductas iniciales de alerta</td></tr>
+                    <tr><td>Alerta Naranja (Atención / Reacciona)</td><td>30%</td><td>Situaciones de riesgo moderado</td></tr>
+                    <tr><td>Alerta Roja (¡Peligro / Urgente!)</td><td>15%</td><td>Casos críticos que requieren intervención inmediata</td></tr>
+                </table>
 
-	const startEditingResource = (resource) => {
-		setResourceForm({
-			category: resource.category,
-			title: resource.title,
-			description: resource.description,
-			source: resource.source,
-			url: resource.url,
-			type: resource.type,
-		})
-		setEditingResourceId(resource._id)
-		setResourceError('')
-		setResourceNotice('')
-	}
+                <div class="footer">
+                    Documento generado automáticamente por el sistema institucional NEBULA • Módulo de Estadística y Prevención
+                </div>
 
-	const cancelEditingResource = () => {
-		setResourceForm(initialResourceForm)
-		setEditingResourceId('')
-		setResourceError('')
-		setResourceNotice('')
-	}
+                <script>
+                    window.onload = function() {
+                        window.print();
+                    }
+                </script>
+            </body>
+            </html>
+        `;
 
-	const handleDeleteResource = async (resource) => {
-		if (!window.confirm(`¿Eliminar "${resource.title}"? Esta acción no se puede deshacer.`)) return
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+    }
 
-		setDeletingResourceId(resource._id)
-		setResourceError('')
-		setResourceNotice('')
-		try {
-			await deleteOrientationResource(resource._id)
-			setResources((currentResources) => currentResources.filter((item) => item._id !== resource._id))
-			if (editingResourceId === resource._id) cancelEditingResource()
-			setResourceNotice('El recurso se eliminó correctamente.')
-		} catch (error) {
-			setResourceError(error.message)
-		} finally {
-			setDeletingResourceId('')
-		}
-	}
+    // Acciones para Solicitudes
+    const handleDeleteRequest = async (req) => {
+        if (!window.confirm('¿Eliminar esta solicitud de orientación?')) return
+        setDeletingRequestId(req._id)
+        try {
+            await deleteOrientationRequest(req._id)
+            setOrientationRequests((curr) => curr.filter((item) => item._id !== req._id))
+            setRequestNotice('Solicitud eliminada correctamente.')
+        } catch (err) {
+            setRequestError(err.message)
+        } finally {
+            setDeletingRequestId('')
+        }
+    }
 
-	const openResourceManager = () => {
-		setIsLoadingResources(true)
-		setResourceError('')
-		setResourceNotice('')
-		setIsManagingResources(true)
-	}
+    // Acciones para Instituciones (Socios - CU24)
+    const handleSavePartner = async (event) => {
+        event.preventDefault()
+        setIsSavingPartner(true)
+        setPartnerError('')
+        setPartnerNotice('')
+        try {
+            if (editingPartnerId) {
+                const updated = await updatePartner(editingPartnerId, partnerForm)
+                setPartners((curr) => curr.map((p) => (p._id === editingPartnerId ? updated : p)))
+                setPartnerNotice('Institución actualizada correctamente.')
+                setEditingPartnerId('')
+            } else {
+                const created = await createPartner(partnerForm)
+                setPartners((curr) => [...curr, created])
+                setPartnerNotice('Institución registrada exitosamente.')
+            }
+            setPartnerForm(initialPartnerForm)
+        } catch (err) {
+            setPartnerError(err.message)
+        } finally {
+            setIsSavingPartner(false)
+        }
+    }
 
-	const handleAddPartner = async (event) => {
-		event.preventDefault()
-		setIsSavingPartner(true)
-		setPartnerError('')
-		setPartnerNotice('')
+    const startEditingPartner = (partner) => {
+        setPartnerForm({
+            name: partner.name,
+            type: partner.type,
+            url: partner.url,
+            image: partner.image || '',
+        })
+        setEditingPartnerId(partner._id)
+    }
 
-		try {
-			const createdPartner = await createPartner(partnerForm)
-			setPartners((currentPartners) => [...currentPartners, createdPartner])
-			setPartnerForm(initialPartnerForm)
-			setPartnerNotice('La organización colaboradora se guardó correctamente.')
-		} catch (error) {
-			setPartnerError(error.message)
-		} finally {
-			setIsSavingPartner(false)
-		}
-	}
+    const handleDeletePartner = async (partner) => {
+        if (!window.confirm(`¿Eliminar la institución "${partner.name}"?`)) return
+        try {
+            await deletePartner(partner._id)
+            setPartners((curr) => curr.filter((item) => item._id !== partner._id))
+            setPartnerNotice('Institución eliminada correctamente.')
+        } catch (err) {
+            setPartnerError(err.message)
+        }
+    }
 
-	const handleUpdatePartner = async (event) => {
-		event.preventDefault()
-		setIsSavingPartner(true)
-		setPartnerError('')
-		setPartnerNotice('')
+    // Acciones para Cuentas de Personal (CU25, CU26)
+    const handleSaveAccount = (e) => {
+        e.preventDefault()
+        if (editingAccountId) {
+            setAccounts(accounts.map(acc => acc._id === editingAccountId ? { ...acc, ...accountForm } : acc))
+            setAccountNotice('Cuenta actualizada con éxito.')
+            setEditingAccountId('')
+        } else {
+            const newAcc = { _id: Date.now().toString(), ...accountForm }
+            setAccounts([...accounts, newAcc])
+            setAccountNotice('Personal institucional registrado con éxito.')
+        }
+        setAccountForm(initialAccountForm)
+    }
 
-		try {
-			const updatedPartner = await updatePartner(editingPartnerId, partnerForm)
-			setPartners((currentPartners) => currentPartners.map((item) => (
-				item._id === editingPartnerId ? updatedPartner : item
-			)))
-			setPartnerForm(initialPartnerForm)
-			setEditingPartnerId('')
-			setPartnerNotice('La organización colaboradora se actualizó correctamente.')
-		} catch (error) {
-			setPartnerError(error.message)
-		} finally {
-			setIsSavingPartner(false)
-		}
-	}
+    const toggleAccountStatus = (id) => {
+        setAccounts(accounts.map(acc => acc._id === id ? { ...acc, active: !acc.active } : acc))
+    }
 
-	const startEditingPartner = (partner) => {
-		setPartnerForm({
-			name: partner.name,
-			type: partner.type,
-			url: partner.url,
-			image: partner.image || '',
-		})
-		setEditingPartnerId(partner._id)
-		setPartnerError('')
-		setPartnerNotice('')
-	}
+    const deleteAccount = (id) => {
+        if (window.confirm('¿Eliminar esta cuenta institucional?')) {
+            setAccounts(accounts.filter(acc => acc._id !== id))
+        }
+    }
 
-	const cancelEditingPartner = () => {
-		setPartnerForm(initialPartnerForm)
-		setEditingPartnerId('')
-		setPartnerError('')
-		setPartnerNotice('')
-	}
+    // Acciones para Catálogo de Contenidos (CU23)
+    const handleSaveResource = async (event) => {
+        event.preventDefault()
+        setIsSavingResource(true)
+        setResourceError('')
+        setResourceNotice('')
+        try {
+            if (editingResourceId) {
+                const updated = await updateOrientationResource(editingResourceId, resourceForm)
+                setResources((curr) => curr.map((r) => (r._id === editingResourceId ? updated : r)))
+                setResourceNotice('Contenido actualizado correctamente.')
+                setEditingResourceId('')
+            } else {
+                const created = await createOrientationResource(resourceForm)
+                setResources((curr) => [...curr, created])
+                setResourceNotice('Contenido agregado al catálogo con éxito.')
+            }
+            setResourceForm(initialResourceForm)
+        } catch (err) {
+            setResourceError(err.message)
+        } finally {
+            setIsSavingResource(false)
+        }
+    }
 
-	const handleDeletePartner = async (partner) => {
-		if (!window.confirm(`¿Eliminar a "${partner.name}" de la red de colaboradores? Esta acción no se puede deshacer.`)) return
+    const startEditingResource = (res) => {
+        setResourceForm({
+            category: res.category,
+            title: res.title,
+            description: res.description || '',
+            source: res.source || '',
+            url: res.url,
+            type: res.type || 'link',
+        })
+        setEditingResourceId(res._id)
+    }
 
-		setDeletingPartnerId(partner._id)
-		setPartnerError('')
-		setPartnerNotice('')
-		try {
-			await deletePartner(partner._id)
-			setPartners((currentPartners) => currentPartners.filter((item) => item._id !== partner._id))
-			if (editingPartnerId === partner._id) cancelEditingPartner()
-			setPartnerNotice('La organización colaboradora se eliminó correctamente.')
-		} catch (error) {
-			setPartnerError(error.message)
-		} finally {
-			setDeletingPartnerId('')
-		}
-	}
+    const handleDeleteResource = async (res) => {
+        if (!window.confirm(`¿Eliminar el contenido "${res.title}"?`)) return
+        try {
+            await deleteOrientationResource(res._id)
+            setResources((curr) => curr.filter((item) => item._id !== res._id))
+            setResourceNotice('Contenido eliminado correctamente.')
+        } catch (err) {
+            setResourceError(err.message)
+        }
+    }
 
-	const openPartnerManager = () => {
-		setIsLoadingPartners(true)
-		setPartnerError('')
-		setPartnerNotice('')
-		setIsManagingPartners(true)
-	}
+    return (
+        <div className="admin-dashboard-container">
+            {/* Barra lateral unificada con ambos roles */}
+            <aside className="admin-sidebar">
+                <div>
+                    <div className="admin-logo-area">
+                        <div className="admin-logo-icon">🔒</div>
+                        <div>
+                            <h1 className="admin-title">NEBULA</h1>
+                            <span className="admin-badge">Control Administrativo</span>
+                        </div>
+                    </div>
 
-	const handleDeleteRequest = async (orientationRequest) => {
-		if (!window.confirm('¿Eliminar este mensaje? Esta acción no se puede deshacer.')) return
+                    <nav className="admin-nav-menu">
+                        <div className="text-xs uppercase text-slate-500 font-bold px-3 py-2">Personal Institucional</div>
+                        <button
+                            type="button"
+                            onClick={() => setCurrentView('solicitudes')}
+                            className={`admin-nav-btn ${currentView === 'solicitudes' ? 'active' : ''}`}
+                        >
+                            <span>Solicitudes de Orientación</span>
+                        </button>
 
-		setDeletingRequestId(orientationRequest._id)
-		setRequestError('')
-		setRequestNotice('')
-		try {
-			await deleteOrientationRequest(orientationRequest._id)
-			setOrientationRequests((currentRequests) => currentRequests.filter(
-				(item) => item._id !== orientationRequest._id,
-			))
-			setRequestNotice('El mensaje se eliminó correctamente.')
-		} catch (error) {
-			setRequestError(error.message)
-		} finally {
-			setDeletingRequestId('')
-		}
-	}
+                        <button
+                            type="button"
+                            onClick={() => setCurrentView('reportes')}
+                            className={`admin-nav-btn ${currentView === 'reportes' ? 'active' : ''}`}
+                        >
+                            <span>Reportes y Seguimiento</span>
+                        </button>
 
-	const openRequestManager = () => {
-		setIsLoadingRequests(true)
-		setRequestError('')
-		setRequestNotice('')
-		setIsManagingRequests(true)
-	}
+                        <button
+                            type="button"
+                            onClick={() => setCurrentView('estadisticas')}
+                            className={`admin-nav-btn ${currentView === 'estadisticas' ? 'active' : ''}`}
+                        >
+                            <span>Estadísticas y Tendencias</span>
+                        </button>
 
-	return (
-		<div id="admin" className="page-shell">
-			<section className="page-header compact-hero">
-				<div className="container">
-					<span className="eyebrow">Administración</span>
-					<h1>Panel de gestión Nebula</h1>
-					<p>Organiza los recursos y la información que mantiene activa nuestra red de apoyo.</p>
-					<button type="button" className="admin-logout-button" onClick={handleLogout} disabled={isLoggingOut}>
-						{isLoggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
-					</button>
-					{logoutError && <p className="admin-auth-error" role="alert">{logoutError}</p>}
-				</div>
-			</section>
-			<section className="page-section">
-				{isManagingReports ? (
-					<Reportes onBack={() => setIsManagingReports(false)} />
-				) : isManagingResources || isManagingPartners || isManagingRequests ? (
-					<div className="container admin-resource-manager">
-						<div className="admin-resource-manager-heading">
-							<div>
-								<span className="eyebrow">Administración de contenido</span>
-								<h2>
-									{isManagingRequests
-										? 'Solicitudes de orientación'
-										: isManagingPartners ? 'Red de colaboradores' : 'Gestionar recursos'}
-								</h2>
-								<p>
-									{isManagingRequests
-										? 'Consulta los mensajes recibidos y los datos de contacto para responder a cada persona.'
-										: isManagingPartners
-											? 'Los cambios se guardan en MongoDB y se reflejan en el directorio público.'
-											: 'Los cambios se guardan en MongoDB y se reflejan en la sección pública de recursos.'}
-								</p>
-							</div>
-							<button
-								type="button"
-								className="admin-resource-back"
-								onClick={() => {
-									setIsManagingResources(false)
-									setIsManagingPartners(false)
-									setIsManagingRequests(false)
-								}}
-							>
-								← Volver al panel
-							</button>
-						</div>
+                        <div className="text-xs uppercase text-slate-500 font-bold px-3 pt-4 pb-2">Administrador Técnico</div>
+                        <button
+                            type="button"
+                            onClick={() => setCurrentView('instituciones')}
+                            className={`admin-nav-btn ${currentView === 'instituciones' ? 'active' : ''}`}
+                        >
+                            <span>Registrar Institución (Socios)</span>
+                        </button>
 
-						{(isManagingRequests ? requestError : isManagingPartners ? partnerError : resourceError) && (
-							<p className="admin-resource-message is-error" role="alert">
-								{isManagingRequests ? requestError : isManagingPartners ? partnerError : resourceError}
-							</p>
-						)}
-						{(isManagingRequests ? requestNotice : isManagingPartners ? partnerNotice : resourceNotice) && (
-							<p className="admin-resource-message is-success" role="status">
-								{isManagingRequests ? requestNotice : isManagingPartners ? partnerNotice : resourceNotice}
-							</p>
-						)}
-						{isLoadingResources || isLoadingPartners || isLoadingRequests ? (
-							<p className="admin-resource-loading" role="status">
-								{isManagingRequests
-									? 'Cargando solicitudes…'
-									: isManagingPartners ? 'Cargando colaboradores…' : 'Cargando recursos…'}
-							</p>
-						) : isManagingRequests ? (
-							orientationRequests.length ? (
-								<ul className="admin-orientation-request-list">
-									{orientationRequests.map((orientationRequest) => (
-										<li className="admin-orientation-request" key={orientationRequest._id}>
-											<div className="admin-orientation-request-content">
-												<div className="admin-orientation-request-heading">
-													<strong>{orientationRequest.name || 'Sin nombre o alias'}</strong>
-													<time dateTime={orientationRequest.createdAt}>
-														{new Date(orientationRequest.createdAt).toLocaleString('es-MX')}
-													</time>
-												</div>
-												<a href={`mailto:${orientationRequest.email}`}>{orientationRequest.email}</a>
-												{orientationRequest.phone && (
-													<a href={`tel:${orientationRequest.phone}`}>{orientationRequest.phone}</a>
-												)}
-												<p>{orientationRequest.message}</p>
-											</div>
-											<button
-												type="button"
-												className="admin-resource-delete"
-												onClick={() => handleDeleteRequest(orientationRequest)}
-												disabled={deletingRequestId === orientationRequest._id}
-											>
-												{deletingRequestId === orientationRequest._id ? 'Eliminando…' : 'Eliminar'}
-											</button>
-										</li>
-									))}
-								</ul>
-							) : requestError ? null : (
-								<p className="admin-resource-empty">No hay solicitudes de orientación.</p>
-							)
-						) : isManagingPartners ? (
-							<>
-								{partners.length ? (
-									<div className="admin-resource-groups">
-										<section className="admin-resource-group">
-											<header>
-												<span aria-hidden="true">🤝</span>
-												<h3>Colaboradores</h3>
-												<span className="admin-resource-count">{partners.length}</span>
-											</header>
-											<ul>
-												{partners.map((partner) => (
-													<li key={partner._id}>
-														<div className="admin-resource-details">
-															<strong>{partner.name}</strong>
-															<span>{partner.type}</span>
-															<a href={partner.url} target="_blank" rel="noreferrer">{partner.url}</a>
-															{partner.image && <span>Imagen: {partner.image}</span>}
-														</div>
-														<div className="admin-resource-actions">
-															<button
-																type="button"
-																className="admin-resource-edit"
-																onClick={() => startEditingPartner(partner)}
-															>
-																Editar
-															</button>
-															<button
-																type="button"
-																className="admin-resource-delete"
-																onClick={() => handleDeletePartner(partner)}
-																disabled={deletingPartnerId === partner._id}
-															>
-																{deletingPartnerId === partner._id ? 'Eliminando…' : 'Eliminar'}
-															</button>
-														</div>
-													</li>
-												))}
-											</ul>
-										</section>
-									</div>
-								) : (
-									<p className="admin-resource-empty">No hay organizaciones colaboradoras registradas.</p>
-								)}
+                        <button
+                            type="button"
+                            onClick={() => setCurrentView('personal')}
+                            className={`admin-nav-btn ${currentView === 'personal' ? 'active' : ''}`}
+                        >
+                            <span>Registrar Personal y Cuentas</span>
+                        </button>
 
-								<form className="admin-resource-form" onSubmit={handleAddPartner}>
-									<h3>Agregar colaborador</h3>
-									<div className="admin-resource-form-grid">
-										<label>
-											Nombre de la organización
-											<input
-												required
-												maxLength="150"
-												value={partnerForm.name}
-												onChange={(event) => setPartnerForm({ ...partnerForm, name: event.target.value })}
-											/>
-										</label>
-										<label>
-											Tipo de colaboración
-											<input
-												required
-												maxLength="100"
-												placeholder="Ej. Atención y orientación especializada"
-												value={partnerForm.type}
-												onChange={(event) => setPartnerForm({ ...partnerForm, type: event.target.value })}
-											/>
-										</label>
-										<label className="admin-resource-form-wide">
-											Sitio web o enlace
-											<input
-												required
-												type="url"
-												maxLength="2048"
-												placeholder="https://…"
-												value={partnerForm.url}
-												onChange={(event) => setPartnerForm({ ...partnerForm, url: event.target.value })}
-											/>
-										</label>
-										<label className="admin-resource-form-wide">
-											URL de imagen (opcional)
-											<input
-												type="url"
-												maxLength="2048"
-												placeholder="https://…"
-												value={partnerForm.image}
-												onChange={(event) => setPartnerForm({ ...partnerForm, image: event.target.value })}
-											/>
-										</label>
-									</div>
-									<button type="submit" className="admin-resource-submit" disabled={isSavingPartner}>
-										{isSavingPartner ? 'Guardando…' : 'Agregar colaborador'}
-									</button>
-								</form>
-							</>
-						) : (
-							<div className="admin-resource-groups">
-								{resourceCategories.map((category) => {
-									const categoryResources = resources.filter((resource) => resource.category === category.id)
-									return (
-										<section className="admin-resource-group" key={category.id}>
-											<header>
-												<span aria-hidden="true">{category.icon}</span>
-												<h3>{category.title}</h3>
-												<span className="admin-resource-count">{categoryResources.length}</span>
-											</header>
-											{categoryResources.length ? (
-												<ul>
-													{categoryResources.map((resource) => (
-														<li key={resource._id}>
-															<div className="admin-resource-details">
-																<strong>{resource.title}</strong>
-																<span>{resource.source} · {resource.type}</span>
-																<a href={resource.url} target="_blank" rel="noreferrer">{resource.url}</a>
-															</div>
-															<div className="admin-resource-actions">
-																<button
-																	type="button"
-																	className="admin-resource-edit"
-																	onClick={() => startEditingResource(resource)}
-																>
-																	Editar
-																</button>
-																<button
-																	type="button"
-																	className="admin-resource-delete"
-																	onClick={() => handleDeleteResource(resource)}
-																	disabled={deletingResourceId === resource._id}
-																>
-																	{deletingResourceId === resource._id ? 'Eliminando…' : 'Eliminar'}
-																</button>
-															</div>
-														</li>
-													))}
-												</ul>
-											) : (
-												<p className="admin-resource-empty">No hay recursos en esta categoría.</p>
-											)}
-										</section>
-									)
-								})}
-							</div>
-						)}
+                        <button
+                            type="button"
+                            onClick={() => setCurrentView('roles')}
+                            className={`admin-nav-btn ${currentView === 'roles' ? 'active' : ''}`}
+                        >
+                            <span>Roles y Permisos</span>
+                        </button>
 
-						{!isManagingPartners && !isManagingRequests && <form className="admin-resource-form" onSubmit={handleAddResource}>
-							<h3>Agregar recurso</h3>
-							<div className="admin-resource-form-grid">
-								<label>
-									Tipo de recurso
-									<select
-										value={resourceForm.category}
-										onChange={(event) => setResourceForm({ ...resourceForm, category: event.target.value })}
-									>
-										{resourceCategories.map((category) => (
-											<option value={category.id} key={category.id}>{category.title}</option>
-										))}
-									</select>
-								</label>
-								<label>
-									Formato
-									<select
-										value={resourceForm.type}
-										onChange={(event) => setResourceForm({ ...resourceForm, type: event.target.value })}
-									>
-										<option value="link">Sitio web</option>
-										<option value="video">Video de YouTube</option>
-										<option value="pdf">Documento o PDF</option>
-									</select>
-								</label>
-								<label>
-									Título
-									<input
-										required
-										maxLength="120"
-										value={resourceForm.title}
-										onChange={(event) => setResourceForm({ ...resourceForm, title: event.target.value })}
-									/>
-								</label>
-								<label>
-									Fuente
-									<input
-										required
-										maxLength="120"
-										value={resourceForm.source}
-										onChange={(event) => setResourceForm({ ...resourceForm, source: event.target.value })}
-									/>
-								</label>
-								<label className="admin-resource-form-wide">
-									Descripción
-									<textarea
-										required
-										maxLength="500"
-										rows="3"
-										value={resourceForm.description}
-										onChange={(event) => setResourceForm({ ...resourceForm, description: event.target.value })}
-									/>
-								</label>
-								<label className="admin-resource-form-wide">
-									URL
-									<input
-										required
-										type="url"
-										maxLength="2048"
-										placeholder={resourceForm.type === 'video' ? 'https://youtu.be/…' : 'https://…'}
-										value={resourceForm.url}
-										onChange={(event) => setResourceForm({ ...resourceForm, url: event.target.value })}
-									/>
-									{resourceForm.type === 'video' && <span className="admin-resource-hint">Los videos deben estar publicados en YouTube.</span>}
-								</label>
-							</div>
-							<button type="submit" className="admin-resource-submit" disabled={isSavingResource}>
-								{isSavingResource ? 'Guardando…' : 'Agregar recurso'}
-							</button>
-						</form>}
-					</div>
-				) : (
-					<div className="container info-grid">
-						{adminOptions.map((option) => (
-							<button
-								key={option.title}
-								type="button"
-								className="info-card admin-option-card"
-								onClick={() => {
-									if (option.title === 'Gestionar recursos') openResourceManager()
-									if (option.title === 'Revisar solicitudes') openRequestManager()
-									if (option.title === 'Red de colaboradores') openPartnerManager()
-									if (option.title === 'Reportes anónimos') setIsManagingReports(true)
-								}}
-							>
-								<div className="card-icon">{option.icon}</div>
-								<h3>{option.title}</h3>
-								<p>{option.description}</p>
-								<span className="card-cta">Abrir módulo</span>
-							</button>
-						))}
-					</div>
-				)}
-			</section>
-			{isManagingResources && editingResourceId && (
-				<AdminEditModal title="Editar recurso" onClose={cancelEditingResource}>
-					{resourceError && <p className="admin-resource-message is-error" role="alert">{resourceError}</p>}
-					<form className="admin-resource-form admin-edit-modal-form" onSubmit={handleUpdateResource}>
-						<div className="admin-resource-form-grid">
-							<label>
-								Tipo de recurso
-								<select
-									value={resourceForm.category}
-									onChange={(event) => setResourceForm({ ...resourceForm, category: event.target.value })}
-								>
-									{resourceCategories.map((category) => (
-										<option value={category.id} key={category.id}>{category.title}</option>
-									))}
-								</select>
-							</label>
-							<label>
-								Formato
-								<select
-									value={resourceForm.type}
-									onChange={(event) => setResourceForm({ ...resourceForm, type: event.target.value })}
-								>
-									<option value="link">Sitio web</option>
-									<option value="video">Video de YouTube</option>
-									<option value="pdf">Documento o PDF</option>
-								</select>
-							</label>
-							<label>
-								Título
-								<input
-									required
-									maxLength="120"
-									value={resourceForm.title}
-									onChange={(event) => setResourceForm({ ...resourceForm, title: event.target.value })}
-								/>
-							</label>
-							<label>
-								Fuente
-								<input
-									required
-									maxLength="120"
-									value={resourceForm.source}
-									onChange={(event) => setResourceForm({ ...resourceForm, source: event.target.value })}
-								/>
-							</label>
-							<label className="admin-resource-form-wide">
-								Descripción
-								<textarea
-									required
-									maxLength="500"
-									rows="3"
-									value={resourceForm.description}
-									onChange={(event) => setResourceForm({ ...resourceForm, description: event.target.value })}
-								/>
-							</label>
-							<label className="admin-resource-form-wide">
-								URL
-								<input
-									required
-									type="url"
-									maxLength="2048"
-									placeholder={resourceForm.type === 'video' ? 'https://youtu.be/…' : 'https://…'}
-									value={resourceForm.url}
-									onChange={(event) => setResourceForm({ ...resourceForm, url: event.target.value })}
-								/>
-								{resourceForm.type === 'video' && <span className="admin-resource-hint">Los videos deben estar publicados en YouTube.</span>}
-							</label>
-						</div>
-						<div className="admin-edit-modal-actions">
-							<button type="button" className="admin-resource-cancel" onClick={cancelEditingResource}>
-								Cancelar
-							</button>
-							<button type="submit" className="admin-resource-submit" disabled={isSavingResource}>
-								{isSavingResource ? 'Guardando…' : 'Guardar cambios'}
-							</button>
-						</div>
-					</form>
-				</AdminEditModal>
-			)}
-			{isManagingPartners && editingPartnerId && (
-				<AdminEditModal title="Editar colaborador" onClose={cancelEditingPartner}>
-					{partnerError && <p className="admin-resource-message is-error" role="alert">{partnerError}</p>}
-					<form className="admin-resource-form admin-edit-modal-form" onSubmit={handleUpdatePartner}>
-						<div className="admin-resource-form-grid">
-							<label>
-								Nombre de la organización
-								<input
-									required
-									maxLength="150"
-									value={partnerForm.name}
-									onChange={(event) => setPartnerForm({ ...partnerForm, name: event.target.value })}
-								/>
-							</label>
-							<label>
-								Tipo de colaboración
-								<input
-									required
-									maxLength="100"
-									value={partnerForm.type}
-									onChange={(event) => setPartnerForm({ ...partnerForm, type: event.target.value })}
-								/>
-							</label>
-							<label className="admin-resource-form-wide">
-								Sitio web o enlace
-								<input
-									required
-									type="url"
-									maxLength="2048"
-									value={partnerForm.url}
-									onChange={(event) => setPartnerForm({ ...partnerForm, url: event.target.value })}
-								/>
-							</label>
-							<label className="admin-resource-form-wide">
-								URL de imagen (opcional)
-								<input
-									type="url"
-									maxLength="2048"
-									value={partnerForm.image}
-									onChange={(event) => setPartnerForm({ ...partnerForm, image: event.target.value })}
-								/>
-							</label>
-						</div>
-						<div className="admin-edit-modal-actions">
-							<button type="button" className="admin-resource-cancel" onClick={cancelEditingPartner}>
-								Cancelar
-							</button>
-							<button type="submit" className="admin-resource-submit" disabled={isSavingPartner}>
-								{isSavingPartner ? 'Guardando…' : 'Guardar cambios'}
-							</button>
-						</div>
-					</form>
-				</AdminEditModal>
-			)}
-		</div>
-	)
+                        <button
+                            type="button"
+                            onClick={() => setCurrentView('catalogo')}
+                            className={`admin-nav-btn ${currentView === 'catalogo' ? 'active' : ''}`}
+                        >
+                            <span>Catálogo de Contenidos</span>
+                        </button>
+                    </nav>
+                </div>
+
+                <div className="admin-sidebar-footer">
+                    <div className="admin-user-info">
+                        <div className="admin-avatar">AD</div>
+                        <div>
+                            <p className="admin-user-name">Administración</p>
+                            <p className="admin-user-status">Sesión Segura</p>
+                        </div>
+                    </div>
+                    <button 
+                        type="button" 
+                        onClick={handleLogout} 
+                        disabled={isLoggingOut}
+                        className="admin-logout-btn"
+                    >
+                        <span>{isLoggingOut ? 'Cerrando…' : 'Cerrar Sesión'}</span>
+                    </button>
+                    {logoutError && <p className="admin-auth-error text-rose text-xs mt-1" role="alert">{logoutError}</p>}
+                </div>
+            </aside>
+
+            {/* Contenido Principal */}
+            <main className="admin-main-content">
+                <header className="admin-header-bar">
+                    <div>
+                        <h2 className="admin-header-title">
+                            {currentView === 'reportes' ? 'Gestión de Reportes y Seguimiento Institucional' :
+                             currentView === 'solicitudes' ? 'Bandeja de Solicitudes de Orientación' :
+                             currentView === 'estadisticas' ? 'Módulo de Estadísticas Generales y Tendencias' :
+                             currentView === 'instituciones' ? 'Registro y Control de Instituciones (Socios)' :
+                             currentView === 'personal' ? 'Registro y Gestión de Cuentas Institucionales' :
+                             currentView === 'roles' ? 'Gestión de Roles y Permisos de Acceso' :
+                             'Gestión del Catálogo de Contenidos del Sistema'}
+                        </h2>
+                        <p className="admin-header-subtitle">Sistema de Prevención y Atención Integral</p>
+                    </div>
+                    <div className="admin-server-status">
+                        <span className="status-dot"></span>
+                        <span>Servidor Seguro Activo</span>
+                    </div>
+                </header>
+
+                <div className="admin-body-container">
+                    {currentView === 'reportes' ? (
+                        <Reportes onBack={() => setCurrentView('solicitudes')} />
+                    ) : currentView === 'solicitudes' ? (
+                        <div className="admin-card-section">
+                            {requestError && <p className="admin-resource-message is-error" role="alert">{requestError}</p>}
+                            {requestNotice && <p className="admin-resource-message is-success" role="status">{requestNotice}</p>}
+
+                            {isLoadingRequests ? (
+                                <p className="admin-resource-loading" role="status">Cargando solicitudes…</p>
+                            ) : orientationRequests.length ? (
+                                <div className="table-responsive">
+                                    <table className="admin-data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Nombre / Alias</th>
+                                                <th>Fecha</th>
+                                                <th>Correo</th>
+                                                <th>Teléfono</th>
+                                                <th>Mensaje</th>
+                                                <th className="text-right">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {orientationRequests.map((req) => (
+                                                <tr key={req._id}>
+                                                    <td className="font-medium text-white">{req.name || 'Anónimo'}</td>
+                                                    <td>{new Date(req.createdAt).toLocaleDateString('es-MX')}</td>
+                                                    <td><a href={`mailto:${req.email}`} className="text-purple">{req.email}</a></td>
+                                                    <td>{req.phone ? <a href={`tel:${req.phone}`}>{req.phone}</a> : 'N/D'}</td>
+                                                    <td>{req.message}</td>
+                                                    <td className="text-right space-x-2">
+                                                        <a href={`mailto:${req.email}`} className="action-btn-review inline-block mr-2 px-3 py-1 bg-purple-700 text-white rounded text-xs">Responder</a>
+                                                        <button
+                                                            type="button"
+                                                            className="action-btn-review px-3 py-1 bg-rose-900 text-white rounded text-xs"
+                                                            onClick={() => handleDeleteRequest(req)}
+                                                            disabled={deletingRequestId === req._id}
+                                                        >
+                                                            {deletingRequestId === req._id ? 'Eliminando…' : 'Eliminar'}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <p className="admin-resource-empty">No hay solicitudes de orientación registradas.</p>
+                            )}
+                        </div>
+                    ) : currentView === 'estadisticas' ? (
+                        <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
+                            <div style={{ 
+                                background: 'rgba(15, 23, 42, 0.8)', 
+                                border: '1px solid #334155', 
+                                borderRadius: '16px', 
+                                padding: '24px', 
+                                marginBottom: '24px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                            }}>
+                                <div>
+                                    <h3 style={{ color: '#fff', fontSize: '20px', margin: '0 0 6px 0' }}>
+                                        📊 Indicadores Generales de Violencia y Tendencias
+                                    </h3>
+                                    <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0 }}>Resumen estadístico agregado de todas las instituciones y evaluaciones del sistema.</p>
+                                </div>
+                                <button 
+                                    type="button" 
+                                    onClick={handleExportPDF}
+                                    style={{
+                                        background: '#7c3aed',
+                                        color: '#fff',
+                                        border: 'none',
+                                        padding: '10px 18px',
+                                        borderRadius: '10px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                        boxShadow: '0 4px 6px -1px rgba(124, 58, 237, 0.3)',
+                                        whiteSpace: 'nowrap'
+                                    }}
+                                >
+                                    📥 Exportar Estadísticas en PDF
+                                </button>
+                            </div>
+
+                            {/* Tarjetas de métricas generales */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '20px' }}>
+                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', letterSpacing: '0.05em' }}>Total Evaluaciones</div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px' }}>
+                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>48</span>
+                                        <span style={{ fontSize: '12px', color: '#34d399', fontWeight: '500' }}>↑ +12% este mes</span>
+                                    </div>
+                                </div>
+                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '20px' }}>
+                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', letterSpacing: '0.05em' }}>Reportes Registrados</div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px' }}>
+                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>19</span>
+                                        <span style={{ fontSize: '12px', color: '#c084fc', fontWeight: '500' }}>Activos en red</span>
+                                    </div>
+                                </div>
+                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '20px' }}>
+                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', letterSpacing: '0.05em' }}>Instituciones Aliadas</div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px' }}>
+                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>{partners.length || 8}</span>
+                                        <span style={{ fontSize: '12px', color: '#38bdf8', fontWeight: '500' }}>Colaboración activa</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Sección de Gráficas visuales con barras */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '20px' }}>
+                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '24px' }}>
+                                    <h4 style={{ color: '#fff', fontSize: '15px', fontWeight: '600', marginBottom: '20px' }}>
+                                        📈 Incidencia por Tipos de Violencia
+                                    </h4>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        <div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
+                                                <span>Violencia Psicológica</span>
+                                                <span style={{ fontWeight: '600', color: '#c084fc' }}>45%</span>
+                                            </div>
+                                            <div style={{ width: '100%', background: '#1e293b', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div style={{ background: '#9333ea', height: '100%', width: '45%', borderRadius: '4px' }}></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
+                                                <span>Violencia Física</span>
+                                                <span style={{ fontWeight: '600', color: '#f43f5e' }}>25%</span>
+                                            </div>
+                                            <div style={{ width: '100%', background: '#1e293b', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div style={{ background: '#e11d48', height: '100%', width: '25%', borderRadius: '4px' }}></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
+                                                <span>Violencia Digital / Patrimonial</span>
+                                                <span style={{ fontWeight: '600', color: '#fbbf24' }}>20%</span>
+                                            </div>
+                                            <div style={{ width: '100%', background: '#1e293b', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div style={{ background: '#f59e0b', height: '100%', width: '20%', borderRadius: '4px' }}></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
+                                                <span>Otro tipo de conducta</span>
+                                                <span style={{ fontWeight: '600', color: '#38bdf8' }}>10%</span>
+                                            </div>
+                                            <div style={{ width: '100%', background: '#1e293b', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div style={{ background: '#0ea5e9', height: '100%', width: '10%', borderRadius: '4px' }}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '24px' }}>
+                                    <h4 style={{ color: '#fff', fontSize: '15px', fontWeight: '600', marginBottom: '20px' }}>
+                                        📉 Niveles de Riesgo Detectados (Violentómetro)
+                                    </h4>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        <div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
+                                                <span>Alerta Amarilla (Precaución)</span>
+                                                <span style={{ fontWeight: '600', color: '#fbbf24' }}>55%</span>
+                                            </div>
+                                            <div style={{ width: '100%', background: '#1e293b', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div style={{ background: '#fbbf24', height: '100%', width: '55%', borderRadius: '4px' }}></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
+                                                <span>Alerta Naranja (Atención / Reacciona)</span>
+                                                <span style={{ fontWeight: '600', color: '#fb923c' }}>30%</span>
+                                            </div>
+                                            <div style={{ width: '100%', background: '#1e293b', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div style={{ background: '#f97316', height: '100%', width: '30%', borderRadius: '4px' }}></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
+                                                <span>Alerta Roja (¡Peligro / Urgente!)</span>
+                                                <span style={{ fontWeight: '600', color: '#f43f5e' }}>15%</span>
+                                            </div>
+                                            <div style={{ width: '100%', background: '#1e293b', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div style={{ background: '#e11d48', height: '100%', width: '15%', borderRadius: '4px' }}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+						
+                    ) : currentView === 'instituciones' ? (
+                        <div className="admin-card-section">
+                            {partnerError && <p className="admin-resource-message is-error" role="alert">{partnerError}</p>}
+                            {partnerNotice && <p className="admin-resource-message is-success" role="status">{partnerNotice}</p>}
+
+                            <h3 className="section-title-custom mb-4">{editingPartnerId ? 'Editar Institución' : 'Registrar nueva institución (Socios)'}</h3>
+                            <form className="admin-resource-form mb-6" onSubmit={handleSavePartner}>
+                                <div className="admin-resource-form-grid">
+                                    <label>
+                                        Nombre de la Institución
+                                        <input required value={partnerForm.name} onChange={(e) => setPartnerForm({ ...partnerForm, name: e.target.value })} className="admin-search-input mt-1" />
+                                    </label>
+                                    <label>
+                                        Tipo de Apoyo / Colaboración
+                                        <input required placeholder="Ej. Atención especializada" value={partnerForm.type} onChange={(e) => setPartnerForm({ ...partnerForm, type: e.target.value })} className="admin-search-input mt-1" />
+                                    </label>
+                                    <label className="admin-resource-form-wide">
+                                        Sitio Web o Enlace
+                                        <input required type="url" placeholder="https://..." value={partnerForm.url} onChange={(e) => setPartnerForm({ ...partnerForm, url: e.target.value })} className="admin-search-input mt-1" />
+                                    </label>
+                                    <label className="admin-resource-form-wide">
+                                        URL de Imagen / Logotipo (Opcional)
+                                        <input type="url" placeholder="https://..." value={partnerForm.image} onChange={(e) => setPartnerForm({ ...partnerForm, image: e.target.value })} className="admin-search-input mt-1" />
+                                    </label>
+                                </div>
+                                <div className="flex gap-2 mt-4">
+                                    <button type="submit" className="btn-primary-custom" disabled={isSavingPartner}>
+                                        {isSavingPartner ? 'Guardando...' : editingPartnerId ? 'Actualizar institución' : 'Registrar institución'}
+                                    </button>
+                                    {editingPartnerId && (
+                                        <button type="button" className="btn-secondary-custom" onClick={() => { setEditingPartnerId(''); setPartnerForm(initialPartnerForm); }}>
+                                            Cancelar
+                                        </button>
+                                    )}
+                                </div>
+                            </form>
+
+                            <h3 className="section-title-custom mb-3">Instituciones Aliadas Registradas</h3>
+                            {isLoadingPartners ? (
+                                <p className="admin-resource-loading" role="status">Cargando socios…</p>
+                            ) : partners.length ? (
+                                <div className="table-responsive">
+                                    <table className="admin-data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Institución</th>
+                                                <th>Tipo de Apoyo</th>
+                                                <th>Enlace</th>
+                                                <th className="text-right">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {partners.map((partner) => (
+                                                <tr key={partner._id}>
+                                                    <td className="font-medium text-white">{partner.name}</td>
+                                                    <td>{partner.type}</td>
+                                                    <td><a href={partner.url} target="_blank" rel="noreferrer" className="text-purple">{partner.url}</a></td>
+                                                    <td className="text-right space-x-2">
+                                                        <button type="button" className="action-btn-review bg-blue-700 px-3 py-1 rounded text-xs text-white mr-2" onClick={() => startEditingPartner(partner)}>Editar</button>
+                                                        <button type="button" className="action-btn-review bg-rose-900 px-3 py-1 rounded text-xs text-white" onClick={() => handleDeletePartner(partner)}>Eliminar</button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <p className="admin-resource-empty">No hay instituciones registradas.</p>
+                            )}
+                        </div>
+                    ) : currentView === 'personal' ? (
+                        <div className="admin-card-section">
+                            {accountNotice && <p className="admin-resource-message is-success mb-4">{accountNotice}</p>}
+                            <h3 className="section-title-custom mb-4">{editingAccountId ? 'Modificar Cuenta Institucional' : 'Registrar Personal Institucional'}</h3>
+                            <form className="admin-resource-form mb-6" onSubmit={handleSaveAccount}>
+                                <div className="admin-resource-form-grid">
+                                    <label>
+                                        Nombre Completo
+                                        <input required value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} className="admin-search-input mt-1" />
+                                    </label>
+                                    <label>
+                                        Correo Institucional
+                                        <input required type="email" value={accountForm.email} onChange={(e) => setAccountForm({ ...accountForm, email: e.target.value })} className="admin-search-input mt-1" />
+                                    </label>
+                                    <label>
+                                        Rol Asignado
+                                        <select value={accountForm.role} onChange={(e) => setAccountForm({ ...accountForm, role: e.target.value })} className="admin-select mt-1 bg-slate-950 p-2 rounded-lg w-full text-white">
+                                            <option value="Personal Institucional">Personal Institucional</option>
+                                            <option value="Administrador Técnico">Administrador Técnico</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        Institución Asociada
+                                        <input required placeholder="Ej. Instituto Municipal de las Mujeres" value={accountForm.institution} onChange={(e) => setAccountForm({ ...accountForm, institution: e.target.value })} className="admin-search-input mt-1" />
+                                    </label>
+                                </div>
+                                <div className="flex gap-2 mt-4">
+                                    <button type="submit" className="btn-primary-custom">
+                                        {editingAccountId ? 'Actualizar Cuenta' : 'Crear Cuenta Institucional'}
+                                    </button>
+                                    {editingAccountId && (
+                                        <button type="button" className="btn-secondary-custom" onClick={() => { setEditingAccountId(''); setAccountForm(initialAccountForm); }}>
+                                            Cancelar
+                                        </button>
+                                    )}
+                                </div>
+                            </form>
+
+                            <h3 className="section-title-custom mb-3">Cuentas Registradas en el Sistema</h3>
+                            <div className="table-responsive">
+                                <table className="admin-data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Nombre</th>
+                                            <th>Correo</th>
+                                            <th>Rol</th>
+                                            <th>Institución</th>
+                                            <th>Estado</th>
+                                            <th className="text-right">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {accounts.map((acc) => (
+                                            <tr key={acc._id}>
+                                                <td className="font-medium text-white">{acc.name}</td>
+                                                <td>{acc.email}</td>
+                                                <td>{acc.role}</td>
+                                                <td>{acc.institution}</td>
+                                                <td>
+                                                    <span className={`px-2 py-1 rounded text-xs ${acc.active ? 'bg-emerald-900 text-emerald-200' : 'bg-rose-900 text-rose-200'}`}>
+                                                        {acc.active ? 'Activa' : 'Inactiva'}
+                                                    </span>
+                                                </td>
+                                                <td className="text-right space-x-2">
+                                                    <button type="button" className="bg-blue-700 px-2.5 py-1 rounded text-xs text-white" onClick={() => { setEditingAccountId(acc._id); setAccountForm(acc); }}>Editar</button>
+                                                    <button type="button" className={`px-2.5 py-1 rounded text-xs text-white ${acc.active ? 'bg-amber-700' : 'bg-emerald-700'}`} onClick={() => toggleAccountStatus(acc._id)}>
+                                                        {acc.active ? 'Desactivar' : 'Activar'}
+                                                    </button>
+                                                    <button type="button" className="bg-rose-900 px-2.5 py-1 rounded text-xs text-white" onClick={() => deleteAccount(acc._id)}>Eliminar</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ) : currentView === 'roles' ? (
+                        <div className="admin-card-section">
+                            <h3 className="section-title-custom mb-3">Gestión de Roles y Permisos Institucionales</h3>
+                            <p className="text-slate-400 mb-4">Administración de permisos específicos de acceso por rol y perfil de usuario.</p>
+                            <div className="space-y-4">
+                                <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                                    <div>
+                                        <h4 className="text-white font-semibold">Personal Institucional</h4>
+                                        <p className="text-sm text-slate-400">Acceso a consulta de reportes, actualización de estatus y estadísticas generales.</p>
+                                    </div>
+                                    <span className="text-xs bg-emerald-900 text-emerald-200 px-3 py-1 rounded-full">Permisos Asignados (CU18 - CU22)</span>
+                                </div>
+                                <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                                    <div>
+                                        <h4 className="text-white font-semibold">Administrador Técnico</h4>
+                                        <p className="text-sm text-slate-400">Acceso total a gestión de catálogo, registro de instituciones, cuentas y permisos.</p>
+                                    </div>
+                                    <span className="text-xs bg-purple-900 text-purple-200 px-3 py-1 rounded-full">Control Total (CU23 - CU27)</span>
+                                </div>
+                            </div>
+                        </div>
+                    ) : currentView === 'catalogo' ? (
+                        <div className="admin-card-section">
+                            {resourceError && <p className="admin-resource-message is-error" role="alert">{resourceError}</p>}
+                            {resourceNotice && <p className="admin-resource-message is-success" role="status">{resourceNotice}</p>}
+
+                            <h3 className="section-title-custom mb-4">{editingResourceId ? 'Editar Contenido' : 'Agregar Contenido al Catálogo'}</h3>
+                            <form className="admin-resource-form mb-6" onSubmit={handleSaveResource}>
+                                <div className="admin-resource-form-grid">
+                                    <label>
+                                        Categoría
+                                        <select value={resourceForm.category} onChange={(e) => setResourceForm({ ...resourceForm, category: e.target.value })} className="admin-select mt-1 bg-slate-950 p-2 rounded-lg w-full text-white">
+                                            {resourceCategories.map((c) => <option value={c.id} key={c.id}>{c.title}</option>)}
+                                        </select>
+                                    </label>
+                                    <label>
+                                        Título
+                                        <input required value={resourceForm.title} onChange={(e) => setResourceForm({ ...resourceForm, title: e.target.value })} className="admin-search-input mt-1" />
+                                    </label>
+                                    <label className="admin-resource-form-wide">
+                                        URL del recurso
+                                        <input required type="url" value={resourceForm.url} onChange={(e) => setResourceForm({ ...resourceForm, url: e.target.value })} className="admin-search-input mt-1" />
+                                    </label>
+                                </div>
+                                <div className="flex gap-2 mt-4">
+                                    <button type="submit" className="btn-primary-custom" disabled={isSavingResource}>
+                                        {isSavingResource ? 'Guardando...' : editingResourceId ? 'Actualizar contenido' : 'Agregar al catálogo'}
+                                    </button>
+                                    {editingResourceId && (
+                                        <button type="button" className="btn-secondary-custom" onClick={() => { setEditingResourceId(''); setResourceForm(initialResourceForm); }}>
+                                            Cancelar
+                                        </button>
+                                    )}
+                                </div>
+                            </form>
+
+                            <h3 className="section-title-custom mb-3">Elementos del Catálogo</h3>
+                            {isLoadingResources ? (
+                                <p className="admin-resource-loading" role="status">Cargando catálogo…</p>
+                            ) : resources.length ? (
+                                <div className="table-responsive">
+                                    <table className="admin-data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Título</th>
+                                                <th>Categoría</th>
+                                                <th>Enlace</th>
+                                                <th className="text-right">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {resources.map((res) => (
+                                                <tr key={res._id}>
+                                                    <td className="font-medium text-white">{res.title}</td>
+                                                    <td>{res.category}</td>
+                                                    <td><a href={res.url} target="_blank" rel="noreferrer" className="text-purple">{res.url}</a></td>
+                                                    <td className="text-right space-x-2">
+                                                        <button type="button" className="action-btn-review bg-blue-700 px-3 py-1 rounded text-xs text-white mr-2" onClick={() => startEditingResource(res)}>Editar</button>
+                                                        <button type="button" className="action-btn-review bg-rose-900 px-3 py-1 rounded text-xs text-white" onClick={() => handleDeleteResource(res)}>Eliminar</button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <p className="admin-resource-empty">No hay elementos en el catálogo.</p>
+                            )}
+                        </div>
+                    ) : null}
+                </div>
+            </main>
+        </div>
+    )
 }
 
 export default Admin

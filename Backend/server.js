@@ -51,6 +51,7 @@ app.use(cors({
         const isConfiguredOrigin = frontendOrigins.includes(origin);
         const isLocalDevelopmentOrigin = origin === "http://localhost:5173"
             || origin === "http://localhost:8080"
+            || origin === "http://localhost:5174"
             || origin === "http://127.0.0.1:5173"
             || origin === "http://127.0.0.1:2000"
             || origin === "http://127.0.0.1:8080";

@@ -12,7 +12,7 @@ import ModulosPreventivos from './ChatGlogal.jsx'
 
 import RutasLegales from './RecursosOrientacion.jsx'
 
-import Admin from './Admin.jsx'
+import AdminDashboard from './Admin.jsx';
 
 import LoginAdmin from './LoginAdmin.jsx'
 
@@ -99,7 +99,7 @@ const pageRoutes = [
 
   'rutas',
 
-  'admin',
+  'login',
 
   'login-admin',
 
@@ -119,7 +119,7 @@ const homeSections = ['inicio', 'pilares', 'nosotros', 'servicios', 'proceso', '
 
 // Destino que abre el botón de salida rápida para cambiar de página de inmediato.
 
-const quickExitUrl = 'https://www.wikipedia.org/'
+const quickExitUrl = 'https://www.shein.com.mx/'
 
 
 
@@ -976,29 +976,17 @@ function App() {
         return <RutasLegales />
 
       case 'admin':
-
         if (isCheckingAdminSession) {
-
           return <main className="admin-session-loading" role="status">Verificando sesión administrativa…</main>
-
         }
-
         return isAdminAuthenticated
-
-          ? <Admin onLogout={handleAdminLogout} />
-
+          ? <AdminDashboard onLogout={handleAdminLogout} />  // <-- Cambiado a AdminDashboard
           : <LoginAdmin
-
               onBack={navigateHome}
-
               onSignup={() => navigateToPage('signup-admin')}
-
               onAuthenticated={completeAdminAuthentication}
-
               initialError={adminSessionError}
-
             />
-
       // Enlaza los formularios de acceso y registro con la navegación y la sesión global.
 
       case 'login-admin':
