@@ -210,51 +210,52 @@ app.use((_req, res) => {
     res.status(404).json({ error: "Ruta no encontrada" });
 });
 
-// Conecta Mongoose a la URI privada cargada desde el entorno del backend o usa el Atlas por defecto.
+// Conecta Mongoose usando la URI privada configurada en el entorno.
 async function connectDatabase() {
-    const defaultAtlasUri = "mongodb+srv://cjimenez20_db_user:baxdvJOFcVUf1GWQ@nebula.aq2h67x.mongodb.net/nebula?retryWrites=true&w=majority";
-    const uri = process.env.MONGODB_URI || process.env.MONGO_URI || defaultAtlasUri;
-
-    if (uri === defaultAtlasUri) {
-        console.log("MONGODB_URI no detectada en .env. Conectando automáticamente al clúster de Atlas...");
+    const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+    if (!uri) {
+        throw new Error("Configura MONGODB_URI para conectar la API a MongoDB.");
     }
 
-    try {
-        await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
-        console.log("MongoDB se ha conectado correctamente.");
+    await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000 });
+    console.log("MongoDB se ha conectado correctamente.");
 
-        const appMetadata = mongoose.connection.collection("appMetadata");
-        const initialization = await appMetadata.findOne({ _id: "orientation-resources-v1" });
-        if (!initialization) {
-            const resourcesCount = await OrientationResource.estimatedDocumentCount();
-            if (resourcesCount === 0) {
-                await OrientationResource.insertMany(defaultOrientationResources);
-                console.log("Recursos de orientación iniciales guardados en MongoDB.");
-            }
-            await appMetadata.insertOne({
-                _id: "orientation-resources-v1",
-                initializedAt: new Date()
-            });
+    const appMetadata = mongoose.connection.collection("appMetadata");
+    const initialization = await appMetadata.findOne({ _id: "orientation-resources-v1" });
+    if (!initialization) {
+        const resourcesCount = await OrientationResource.estimatedDocumentCount();
+        if (resourcesCount === 0) {
+            await OrientationResource.insertMany(defaultOrientationResources);
+            console.log("Recursos de orientación iniciales guardados en MongoDB.");
         }
-        const partnerInitialization = await appMetadata.findOne({ _id: "partners-v1" });
-        if (!partnerInitialization) {
-            const partnersCount = await Partner.estimatedDocumentCount();
-            if (partnersCount === 0) {
-                await Partner.insertMany(defaultPartners);
-                console.log("Red de colaboradores inicial guardada en MongoDB.");
-            }
-            await appMetadata.insertOne({
-                _id: "partners-v1",
-                initializedAt: new Date()
-            });
+        await appMetadata.insertOne({
+            _id: "orientation-resources-v1",
+            initializedAt: new Date()
+        });
+    }
+    const partnerInitialization = await appMetadata.findOne({ _id: "partners-v1" });
+    if (!partnerInitialization) {
+        const partnersCount = await Partner.estimatedDocumentCount();
+        if (partnersCount === 0) {
+            await Partner.insertMany(defaultPartners);
+            console.log("Red de colaboradores inicial guardada en MongoDB.");
         }
-    } catch (error) {
-        console.error("No se pudo conectar a MongoDB:", error.message);
+        await appMetadata.insertOne({
+            _id: "partners-v1",
+            initializedAt: new Date()
+        });
     }
 }
 
-// Inicia el servidor HTTP y comienza a realizar la conexión a la bdd
-function startServer() {
+// Inicia el servidor solo después de conectar y preparar MongoDB.
+async function startServer() {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret || jwtSecret.length < 32) {
+        throw new Error("Configura JWT_SECRET con al menos 32 caracteres.");
+    }
+
+    await connectDatabase();
+
     const port = Number(process.env.PORT) || 3000;
     const server = app.listen(port, () => {
         console.log(`Nebula API ejecutándose en el puerto ${port}.`);
@@ -265,13 +266,15 @@ function startServer() {
         process.exitCode = 1;
     });
 
-    void connectDatabase();
     return server;
 }
 
 // Permite importar la aplicación en pruebas sin abrir automáticamente un puerto
 if (require.main === module) {
-    startServer();
+    startServer().catch((error) => {
+        console.error("No se pudo iniciar Nebula API:", error.message);
+        process.exitCode = 1;
+    });
 }
 
 module.exports = { app, startServer };

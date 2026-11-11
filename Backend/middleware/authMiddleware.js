@@ -1,9 +1,6 @@
 const jwt = require("jsonwebtoken");
 const { COOKIE_NAME } = require("../controllers/authController");
 
-// RESPALDO DE EMERGENCIA (Debe coincidir con el del authController)
-const FALLBACK_JWT_SECRET = "nebula_super_secret_jwt_key_security_2026_fallback";
-
 // Extrae la cookie de sesión de la cabecera HTTP sin depender de almacenamiento cliente.
 function readCookie(req, name) {
   const cookieHeader = req.headers.cookie || "";
@@ -18,7 +15,7 @@ function readCookie(req, name) {
 // Verifica firma, audiencia y sesión activa del JWT antes de permitir acceso a rutas privadas.
 function verificarToken(req, res, next) {
   const token = readCookie(req, COOKIE_NAME);
-  const secret = process.env.JWT_SECRET || FALLBACK_JWT_SECRET;
+  const secret = process.env.JWT_SECRET;
 
   if (!secret || secret.length < 32) {
     return res.status(503).json({ mensaje: "La autenticación no está configurada correctamente." });

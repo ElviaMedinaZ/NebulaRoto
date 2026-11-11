@@ -78,21 +78,32 @@ npm install
 npm start
 ```
 
-La API escucha en el puerto `3000` por defecto (se puede cambiar con `PORT`) y queda disponible en las interfaces de red del equipo. `GET /health` informa el estado del servidor y MongoDB. Si MongoDB no está configurado o disponible, el servidor sigue iniciando, pero `/health` responde con estado `503` y `"status": "degraded"`. Configura `MONGODB_URI` para conectar MongoDB Atlas; también se acepta `MONGO_URI` por compatibilidad. Si Atlas no conecta, revisa que el clúster esté activo, que las credenciales de base de datos sean correctas y que la IP pública de salida de la máquina donde corre la API esté permitida en **Atlas → Security → Network Access**.
+La API escucha en el puerto `3000` por defecto (Render asigna `PORT` automáticamente) y `GET /health` informa si MongoDB está conectado. El proceso requiere `MONGODB_URI` (también se acepta `MONGO_URI`) y `JWT_SECRET`; si falta alguna variable o no es posible conectar con MongoDB, el proceso no inicia. Revisa que el clúster esté activo, que las credenciales sean correctas y que las direcciones de salida de Render estén permitidas en **Atlas → Security → Network Access**.
 
 Para habilitar el acceso administrativo, configura en `Backend/.env`:
 
 - `JWT_SECRET`: una clave aleatoria de al menos 32 caracteres; no la compartas ni la incluyas en el frontend.
-- `FRONTEND_URL`: orígenes adicionales autorizados, separados por comas. Los orígenes locales (`localhost`) y las direcciones IPv4 privadas de la LAN en los puertos `5173` y `8080` se autorizan automáticamente para facilitar las pruebas en la red local. En producción, indica aquí el origen exacto del sitio.
-- En producción, configura `NODE_ENV=production`, sirve el sitio mediante HTTPS y usa dominios del mismo sitio para frontend y API, de modo que el navegador envíe la cookie `Secure` con `SameSite=Lax`.
+- `FRONTEND_URL`: orígenes autorizados separados por comas. Los orígenes locales (`localhost`) y las direcciones IPv4 privadas de la LAN en los puertos `5173` y `8080` se autorizan automáticamente para pruebas. En producción, indica el origen exacto del frontend.
+- En producción, configura `NODE_ENV=production` y sirve el sitio mediante HTTPS. Con el proxy de Vercel, las llamadas a la API son del mismo origen y la cookie de sesión usa `Secure` con `SameSite=Lax`.
 
 El registro público acepta cualquier correo electrónico válido y crea cuentas con rol `usuario`. Los permisos institucionales y administrativos se pueden asignar desde la gestión de cuentas; `ADMIN_EMAILS` no se utiliza.
 
 Los recursos de orientación y la red de colaboradores se inicializan en MongoDB con los datos actuales en el primer arranque que encuentra cada colección vacía. La API los ofrece públicamente en `GET /api/resources` y `GET /api/partners`; agregar, editar y eliminar elementos requiere una sesión administrativa.
 
-Puedes generar `JWT_SECRET` desde `Backend/` con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` y copiar el resultado directamente a `Backend/.env`.
+Puedes generar `JWT_SECRET` desde `Backend/` con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` y guardarlo como variable secreta en el proveedor de despliegue. `Backend/.env.example` muestra las variables requeridas para desarrollo local.
 
-Por ahora, el frontend llama directamente a la API local en `http://<host-del-frontend>:3000`, tanto en desarrollo como en builds. Para probar en la misma computadora, inicia el backend en el puerto `3000` y abre el frontend localmente. Para usarlo desde otra computadora, inicia el backend en el equipo anfitrión y abre el frontend usando la IP de ese equipo; Vite escucha en todas las interfaces y la API autoriza orígenes IPv4 privados de la LAN en los puertos `5173` y `8080`. Esta configuración temporal no usa la API de Render.
+En desarrollo, el frontend usa `http://<host-del-frontend>:3000`. En producción, las llamadas usan rutas relativas `/api` y `Frontend/vercel.json` las reenvía al servicio de Render; así las cookies de sesión permanecen bajo el mismo origen del frontend.
+
+### Despliegue del backend en Render
+
+El archivo `render.yaml` configura un Web Service con `Backend/` como directorio raíz, `npm ci` como build, `npm start` como comando de inicio y `/health` como health check. Para desplegarlo:
+
+1. En Render, crea un **Blueprint** conectado a este repositorio y confirma la configuración de `render.yaml`.
+2. Completa `MONGODB_URI` con la URI de MongoDB Atlas y `FRONTEND_URL` con el origen exacto de Vercel (por ejemplo, `https://tu-sitio.vercel.app`). Render genera `JWT_SECRET`.
+3. En MongoDB Atlas, habilita el acceso de red desde el servicio y confirma que la URI y el usuario de base de datos sean válidos.
+4. Espera a que `/health` responda `200`. Si Render asigna una URL distinta de `https://proyecto-nebula-3.onrender.com`, actualiza el destino de `Frontend/vercel.json` con la URL asignada.
+
+No agregues secretos al repositorio. Las variables de Render se configuran en el panel y el puerto lo asigna el proveedor.
 
 ### Acceso desde otras computadoras de la red local
 
@@ -183,7 +194,7 @@ La carga del chat requiere conexión a Internet y disponibilidad de jsDelivr y d
 
 ### MongoDB
 
-La API se conecta a MongoDB mediante `MONGODB_URI` (o `MONGO_URI`) del archivo `Backend/.env`. `docker-compose.yml` construye el backend y el frontend, y proporciona el archivo de entorno del backend al contenedor. La disponibilidad de la API no garantiza que Atlas sea accesible: configura la lista de acceso de red de Atlas para el entorno desde donde se ejecuta el backend.
+La API se conecta a MongoDB mediante `MONGODB_URI` (o `MONGO_URI`) del entorno. `docker-compose.yml` construye el backend y el frontend, y proporciona el archivo de entorno del backend al contenedor. La disponibilidad de la API no garantiza que Atlas sea accesible: configura la lista de acceso de red de Atlas para el entorno desde donde se ejecuta el backend.
 
 ### Chat global anónimo
 

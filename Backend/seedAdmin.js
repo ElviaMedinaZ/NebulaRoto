@@ -2,17 +2,22 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const Admin = require('./models/Admin'); // Asegúrate de que apunte a tu modelo Admin
 
+require('dotenv').config({ path: require('node:path').join(__dirname, '.env') });
+
 async function crearAdminDirecto() {
     try {
-        // Conecta usando la misma URI de tu servidor
-        const uri = "mongodb+srv://cjimenez20_db_user:baxdvJOFcVUf1GWQ@nebula.aq2h67x.mongodb.net/nebula?retryWrites=true&w=majority";
+        const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+        const emailAdmin = process.env.ADMIN_EMAIL;
+        const adminPassword = process.env.ADMIN_PASSWORD;
+        if (!uri || !emailAdmin || !adminPassword) {
+            throw new Error("Configura MONGODB_URI, ADMIN_EMAIL y ADMIN_PASSWORD.");
+        }
+
         await mongoose.connect(uri);
         console.log("Conectado a MongoDB Atlas...");
 
-        const emailAdmin = "admin@nebula.com";
-        
         // Verifica si ya existe para actualizarlo o crearlo
-        const passwordHash = await bcrypt.hash("Admin12345678*", 12);
+        const passwordHash = await bcrypt.hash(adminPassword, 12);
         
         const resultado = await Admin.findOneAndUpdate(
             { email: emailAdmin },
@@ -26,11 +31,12 @@ async function crearAdminDirecto() {
             { upsert: true, new: true }
         );
 
-        console.log("¡Usuario Administrador creado/actualizado con éxito en MongoDB Atlas!", resultado);
-        process.exit(0);
+        console.log("Usuario administrador creado o actualizado.", resultado.email);
     } catch (error) {
         console.error("Error al crear el admin:", error);
-        process.exit(1);
+        process.exitCode = 1;
+    } finally {
+        await mongoose.disconnect();
     }
 }
 

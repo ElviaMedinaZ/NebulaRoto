@@ -5,9 +5,6 @@ const Admin = require("../models/Admin");
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
 const ADMIN_EMAIL = "carlos@nebula.com";
 
-// RESPALDO DE EMERGENCIA PARA JWT (El registro y validación de usuarios ahora vive en la base de datos)
-const FALLBACK_JWT_SECRET = "nebula_super_secret_jwt_key_security_2026_fallback";
-
 // Usa un nombre de cookie con prefijo estricto en producción y uno local en desarrollo.
 const COOKIE_NAME = process.env.NODE_ENV === "production"
   ? "__Host-nebula_admin_session"
@@ -23,9 +20,9 @@ function getCookieOptions() {
   };
 }
 
-// Firma y establece el JWT de administrador; utiliza el respaldo si falta el secreto.
+// Firma y establece el JWT de administrador.
 function createSession(res, admin) {
-  const secret = process.env.JWT_SECRET || FALLBACK_JWT_SECRET;
+  const secret = process.env.JWT_SECRET;
   
   if (!secret || secret.length < 32) {
     const error = new Error("La autenticación requiere un JWT_SECRET de al menos 32 caracteres.");
@@ -75,7 +72,7 @@ const registrar = async (req, res) => {
   }
 
   try {
-    const activeSecret = process.env.JWT_SECRET || FALLBACK_JWT_SECRET;
+    const activeSecret = process.env.JWT_SECRET;
     if (!activeSecret || activeSecret.length < 32) {
       return res.status(503).json({ mensaje: "La autenticación no está configurada correctamente." });
     }
@@ -117,7 +114,7 @@ const login = async (req, res) => {
   }
 
   try {
-    const activeSecret = process.env.JWT_SECRET || FALLBACK_JWT_SECRET;
+    const activeSecret = process.env.JWT_SECRET;
     if (!activeSecret || activeSecret.length < 32) {
       return res.status(503).json({ mensaje: "La autenticación no está configurada correctamente." });
     }
