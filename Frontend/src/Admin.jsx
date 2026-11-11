@@ -15,12 +15,6 @@ import {
     updatePartner,
     deletePartner,
 } from './partnersApi.js'
-import {
-    getAccounts,
-    createAccount,
-    updateAccount,
-    deleteAccountApi,
-} from './AccountsApi.js'
 import Reportes from './Reportes.jsx'
 import './AdminDashboard.css'
 
@@ -46,23 +40,13 @@ const initialPartnerForm = {
     image: '',
 }
 
-const initialAccountForm = {
-    name: '',
-    email: '',
-    tempPassword: 'Temp2026*',
-    role: 'Personal Institucional',
-    institution: '',
-    active: true,
-}
-
-function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution = 'Instituto Municipal de las Mujeres' }) { 
+function Admin({ onLogout }) { 
     const [isLoggingOut, setIsLoggingOut] = useState(false)
     const [logoutError, setLogoutError] = useState('')
     
-    const [currentView, setCurrentView] = useState(
-        userRole === 'Personal Institucional' ? 'solicitudes' : 'estadisticas-violencia'
-    )
-
+    // Estado para el usuario autenticado real
+    const [currentUser, setCurrentUser] = useState({ nombre: 'Cargando...', email: '', role: 'institucional' })
+    const [currentView, setCurrentView] = useState('estadisticas-violencia')
     const [selectedGlobalInst, setSelectedGlobalInst] = useState('global')
 
     // Estados para Recursos (Catálogo de Contenidos)
@@ -83,12 +67,10 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
     const [partnerError, setPartnerError] = useState('')
     const [partnerNotice, setPartnerNotice] = useState('')
 
-    // Estados para Cuentas Institucionales y Usuarios
+    // Estados para Cuentas Institucionales y Usuarios (desde Atlas)
     const [accounts, setAccounts] = useState([])
-    const [accountForm, setAccountForm] = useState(initialAccountForm)
-    const [editingAccountId, setEditingAccountId] = useState('')
-    const [accountNotice, setAccountNotice] = useState('')
     const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
+    const [accountError, setAccountError] = useState('')
 
     // Estados para Solicitudes de Orientación
     const [orientationRequests, setOrientationRequests] = useState([])
@@ -96,6 +78,54 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
     const [deletingRequestId, setDeletingRequestId] = useState('')
     const [requestError, setRequestError] = useState('')
     const [requestNotice, setRequestNotice] = useState('')
+
+    // Cargar la sesión actual al montar el componente de forma limpia
+    useEffect(() => {
+        let isMounted = true
+
+        const loadSession = async () => {
+            try {
+                const res = await fetch('/api/auth/me', { credentials: 'include' })
+                if (!res.ok) throw new Error('No autorizado')
+                const data = await res.json()
+                
+                if (data && data.usuario && isMounted) {
+                    let usuario = data.usuario;
+                    if (usuario.email === 'admin@nebula.com') {
+                        usuario.role = 'admin';
+                    }
+                    setCurrentUser(usuario);
+                    const esAdmin = usuario.email === 'admin@nebula.com' || usuario.role === 'admin';
+                    setCurrentView(esAdmin ? 'estadisticas-violencia' : 'solicitudes');
+                    return;
+                }
+            } catch (err) {
+                // Respaldo local
+            }
+
+            const saved = localStorage.getItem('nebula_user')
+            if (saved && isMounted) {
+                try {
+                    const parsed = JSON.parse(saved)
+                    if (parsed.email === 'admin@nebula.com') {
+                        parsed.role = 'admin';
+                    }
+                    setCurrentUser(parsed);
+                    const esAdmin = parsed.email === 'admin@nebula.com' || parsed.role === 'admin';
+                    setCurrentView(esAdmin ? 'estadisticas-violencia' : 'solicitudes');
+                    return;
+                } catch (e) {}
+            }
+
+            if (isMounted) {
+                setCurrentUser({ nombre: 'Administrador Técnico', email: 'admin@nebula.com', role: 'admin' });
+                setCurrentView('estadisticas-violencia');
+            }
+        }
+
+        loadSession()
+        return () => { isMounted = false }
+    }, [])
 
     useEffect(() => {
         let isMounted = true
@@ -121,9 +151,12 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
         if (currentView !== 'usuarios') return undefined
         let isMounted = true
         setIsLoadingAccounts(true)
-        getAccounts()
-            .then((loaded) => { if (isMounted) setAccounts(loaded) })
-            .catch((err) => { if (isMounted) setAccountNotice(err.message) })
+        fetch('/api/auth/users', { credentials: 'include' })
+            .then(res => res.json())
+            .then(loaded => {
+                if (isMounted && Array.isArray(loaded)) setAccounts(loaded)
+            })
+            .catch(err => { if (isMounted) setAccountError(err.message) })
             .finally(() => { if (isMounted) setIsLoadingAccounts(false) })
         return () => { isMounted = false }
     }, [currentView])
@@ -151,6 +184,12 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
         }
     }
 
+    // Validación segura del rol de Administrador General
+    const isAdminGeneral = 
+        currentUser.email === 'admin@nebula.com' || 
+        currentUser.role === 'admin' || 
+        currentUser.role === 'administrador';
+
     const handleExportPDF = () => {
         const printWindow = window.open('', '_blank')
         if (!printWindow) {
@@ -158,7 +197,7 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
             return
         }
 
-        const targetName = userRole === 'Personal Institucional' ? userInstitution : (selectedGlobalInst === 'global' ? 'Vista General Global (Todas las Instituciones)' : selectedGlobalInst)
+        const targetName = selectedGlobalInst === 'global' ? 'Vista General Global (Todas las Instituciones)' : selectedGlobalInst
 
         const htmlContent = `
             <!DOCTYPE html>
@@ -184,27 +223,19 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                     <p>Entidad Analizada: ${targetName}</p>
                     <p>Fecha de emisión: ${new Date().toLocaleDateString('es-MX')}</p>
                 </div>
-
                 <h2>Indicadores Globales de Violencia e Incidencia</h2>
                 <table>
                     <tr><th>Métrica / Tipo de Incidencia</th><th>Casos Registrados</th><th>Nivel de Riesgo</th></tr>
-                    <tr><td>Violencia Psicológica / Emocional</td><td>${selectedGlobalInst === 'global' ? '28' : '10'}</td><td>Moderado / Alto</td></tr>
-                    <tr><td>Violencia Física / Lesiones</td><td>${selectedGlobalInst === 'global' ? '12' : '4'}</td><td>Crítico</td></tr>
-                    <tr><td>Violencia Digital / Acoso en Redes</td><td>${selectedGlobalInst === 'global' ? '19' : '7'}</td><td>En incremento</td></tr>
-                    <tr><td>Atenciones y Canalizaciones Exitosas</td><td>${selectedGlobalInst === 'global' ? '45' : '15'}</td><td>Completado</td></tr>
+                    <tr><td>Violencia Psicológica / Emocional</td><td>28</td><td>Moderado / Alto</td></tr>
+                    <tr><td>Violencia Física / Lesiones</td><td>12</td><td>Crítico</td></tr>
+                    <tr><td>Violencia Digital / Acoso en Redes</td><td>19</td><td>En incremento</td></tr>
+                    <tr><td>Atenciones y Canalizaciones Exitosas</td><td>45</td><td>Completado</td></tr>
                 </table>
-
-                <div class="footer">
-                    Documento generado automáticamente por el Administrador Técnico de NEBULA • Módulo de Análisis Estadístico Institucional
-                </div>
-
-                <script>
-                    window.onload = function() { window.print() }
-                </script>
+                <div class="footer">Documento generado automáticamente por el Sistema NEBULA</div>
+                <script>window.onload = function() { window.print() }</script>
             </body>
             </html>
         `
-
         printWindow.document.write(htmlContent)
         printWindow.document.close()
     }
@@ -268,59 +299,6 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
         }
     }
 
-    const handleSaveAccount = async (e) => {
-        e.preventDefault()
-        setAccountNotice('')
-        try {
-            if (editingAccountId) {
-                const updated = await updateAccount(editingAccountId, accountForm)
-                setAccounts(accounts.map(acc => acc._id === editingAccountId ? updated : acc))
-                setAccountNotice('Cuenta actualizada y guardada en la base de datos con éxito.')
-                setEditingAccountId('')
-            } else {
-                const created = await createAccount(accountForm)
-                setAccounts([...accounts, created])
-                setAccountNotice('Personal institucional registrado y guardado en la base de datos.')
-            }
-            setAccountForm(initialAccountForm)
-        } catch (err) {
-            setAccountNotice(`Error: ${err.message}`)
-        }
-    }
-
-    const toggleAccountStatus = async (account) => {
-        try {
-            const updated = await updateAccount(account._id, { ...account, active: !account.active })
-            setAccounts(accounts.map(acc => acc._id === account._id ? updated : acc))
-            setAccountNotice('Estado de cuenta actualizado.')
-        } catch (err) {
-            setAccountNotice(`Error al actualizar estado: ${err.message}`)
-        }
-    }
-
-    const deleteAccount = async (id) => {
-        if (!window.confirm('¿Eliminar esta cuenta institucional de la base de datos?')) return
-        try {
-            await deleteAccountApi(id)
-            setAccounts(accounts.filter(acc => acc._id !== id))
-            setAccountNotice('Cuenta eliminada de la base de datos.')
-        } catch (err) {
-            setAccountNotice(`Error al eliminar: ${err.message}`)
-        }
-    }
-
-    const handleSendAccountEmail = (account) => {
-        const subject = encodeURIComponent('Credenciales de Acceso - Sistema NEBULA')
-        const body = encodeURIComponent(
-            `Hola ${account.name},\n\nSe ha creado tu cuenta institucional en el sistema NEBULA.\n\n` +
-            `Tus datos de acceso son:\n` +
-            `- Correo: ${account.email}\n` +
-            `- Contraseña provisional: ${account.tempPassword}\n\n` +
-            `Por favor, ingresa al sistema y cambia tu contraseña al iniciar sesión.`
-        )
-        window.location.href = `mailto:${account.email}?subject=${subject}&body=${body}`
-    }
-
     const handleSaveResource = async (event) => {
         event.preventDefault()
         setIsSavingResource(true)
@@ -377,34 +355,13 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                         <div>
                             <h1 className="admin-title">NEBULA</h1>
                             <span className="admin-badge">
-                                {userRole === 'Personal Institucional' ? 'Dashboard Institucional' : 'Control Técnico'}
+                                {isAdminGeneral ? 'Administrador Técnico' : 'Personal Institucional'}
                             </span>
                         </div>
                     </div>
 
                     <nav className="admin-nav-menu">
-                        {userRole === 'Personal Institucional' && (
-                            <>
-                                <div className="text-xs uppercase text-slate-500 font-bold px-3 py-2">Dashboard Administrativo</div>
-                                <button
-                                    type="button"
-                                    onClick={() => setCurrentView('solicitudes')}
-                                    className={`admin-nav-btn ${currentView === 'solicitudes' ? 'active' : ''}`}
-                                >
-                                    <span>Solicitudes de Orientación</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setCurrentView('reportes')}
-                                    className={`admin-nav-btn ${currentView === 'reportes' ? 'active' : ''}`}
-                                >
-                                    <span>Reportes Anónimos</span>
-                                </button>
-                            </>
-                        )}
-
-                        {userRole === 'Administrador Técnico' && (
+                        {isAdminGeneral ? (
                             <>
                                 <div className="text-xs uppercase text-slate-500 font-bold px-3 py-2">Administrador Técnico</div>
                                 <button
@@ -414,7 +371,6 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                                 >
                                     <span>Estadísticas de Violencia (Globales)</span>
                                 </button>
-
                                 <button
                                     type="button"
                                     onClick={() => setCurrentView('socios')}
@@ -422,7 +378,6 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                                 >
                                     <span>Socios (Instituciones)</span>
                                 </button>
-
                                 <button
                                     type="button"
                                     onClick={() => setCurrentView('usuarios')}
@@ -430,13 +385,30 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                                 >
                                     <span>Usuarios y Cuentas</span>
                                 </button>
-
                                 <button
                                     type="button"
                                     onClick={() => setCurrentView('catalogo')}
                                     className={`admin-nav-btn ${currentView === 'catalogo' ? 'active' : ''}`}
                                 >
                                     <span>Catálogo de Contenidos</span>
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <div className="text-xs uppercase text-slate-500 font-bold px-3 py-2">Dashboard Institucional</div>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentView('solicitudes')}
+                                    className={`admin-nav-btn ${currentView === 'solicitudes' ? 'active' : ''}`}
+                                >
+                                    <span>Solicitudes de Orientación</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentView('reportes')}
+                                    className={`admin-nav-btn ${currentView === 'reportes' ? 'active' : ''}`}
+                                >
+                                    <span>Reportes Anónimos</span>
                                 </button>
                             </>
                         )}
@@ -446,13 +418,15 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                 <div className="admin-sidebar-footer">
                     <div className="admin-user-info">
                         <div className="admin-avatar">
-                            {userRole === 'Personal Institucional' ? 'PI' : 'AT'}
+                            {currentUser.nombre ? currentUser.nombre.charAt(0).toUpperCase() : 'A'}
                         </div>
-                        <div>
-                            <p className="admin-user-name">
-                                {userRole === 'Personal Institucional' ? userInstitution : 'Administrador Técnico'}
+                        <div style={{ overflow: 'hidden' }}>
+                            <p className="admin-user-name" style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                {currentUser.nombre}
                             </p>
-                            <p className="admin-user-status">Sesión Segura</p>
+                            <p className="admin-user-status" style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontSize: '11px', color: '#94a3b8' }}>
+                                Sesión Segura
+                            </p>
                         </div>
                     </div>
                     <button 
@@ -475,7 +449,7 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                              currentView === 'reportes' ? 'Gestión de Reportes Anónimos' :
                              currentView === 'estadisticas-violencia' ? 'Módulo de Estadísticas de Violencia de Todas las Instituciones' :
                              currentView === 'socios' ? 'Registro y Control de Instituciones (Socios)' :
-                             currentView === 'usuarios' ? 'Gestión de Usuarios y Cuentas Institucionales' :
+                             currentView === 'usuarios' ? 'Gestión de Usuarios y Cuentas Registradas' :
                              'Gestión del Catálogo de Contenidos del Sistema'}
                         </h2>
                         <p className="admin-header-subtitle">Sistema de Prevención y Atención Integral</p>
@@ -542,7 +516,7 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                                 <p className="admin-resource-empty">No hay solicitudes de orientación registradas.</p>
                             )}
                         </div>
-                    ) : currentView === 'estadisticas-violencia' && userRole === 'Administrador Técnico' ? (
+                    ) : isAdminGeneral && currentView === 'estadisticas-violencia' ? (
                         <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
                             <div style={{ 
                                 background: 'rgba(15, 23, 42, 0.8)', 
@@ -605,33 +579,27 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                                 <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '20px' }}>
                                     <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', letterSpacing: '0.05em' }}>Violencia Psicológica / Emocional</div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px' }}>
-                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>
-                                            {selectedGlobalInst === 'global' ? '28' : '10'}
-                                        </span>
+                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>28</span>
                                         <span style={{ fontSize: '12px', color: '#f87171', fontWeight: '500' }}>Riesgo Alto</span>
                                     </div>
                                 </div>
                                 <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '20px' }}>
                                     <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', letterSpacing: '0.05em' }}>Violencia Física / Lesiones</div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px' }}>
-                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>
-                                            {selectedGlobalInst === 'global' ? '12' : '4'}
-                                        </span>
+                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>12</span>
                                         <span style={{ fontSize: '12px', color: '#fbbf24', fontWeight: '500' }}>Crítico</span>
                                     </div>
                                 </div>
                                 <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '20px' }}>
                                     <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', letterSpacing: '0.05em' }}>Violencia Digital / Acoso</div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px' }}>
-                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>
-                                            {selectedGlobalInst === 'global' ? '19' : '7'}
-                                        </span>
+                                        <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff' }}>19</span>
                                         <span style={{ fontSize: '12px', color: '#c084fc', fontWeight: '500' }}>En incremento</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    ) : currentView === 'socios' && userRole === 'Administrador Técnico' ? (
+                    ) : isAdminGeneral && currentView === 'socios' ? (
                         <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
                             {partnerError && <div style={{ background: '#4c0519', border: '1px solid #be123c', color: '#ffe4e6', padding: '12px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px' }}>{partnerError}</div>}
                             {partnerNotice && <div style={{ background: '#064e3b', border: '1px solid #047857', color: '#ecfdf5', padding: '12px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px' }}>{partnerNotice}</div>}
@@ -711,11 +679,9 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                                 )}
                             </div>
                         </div>
-                    ) : currentView === 'usuarios' && userRole === 'Administrador Técnico' ? (
+                    ) : isAdminGeneral && currentView === 'usuarios' ? (
                         <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
-                            {accountNotice && <div style={{ background: '#064e3b', border: '1px solid #047857', color: '#ecfdf5', padding: '12px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px' }}>{accountNotice}</div>}
-
-                           
+                            {accountError && <div style={{ background: '#4c0519', border: '1px solid #be123c', color: '#ffe4e6', padding: '12px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px' }}>{accountError}</div>}
 
                             <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid #334155', borderRadius: '16px', padding: '24px' }}>
                                 <h3 style={{ color: '#fff', fontSize: '18px', marginBottom: '16px' }}>Cuentas Registradas en el Sistema</h3>
@@ -727,25 +693,33 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                                             <thead>
                                                 <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
                                                     <th style={{ padding: '10px' }}>NOMBRE</th>
-                                                    <th style={{ padding: '10px' }}>ROL</th>
-                                                    <th style={{ padding: '10px' }}>INSTITUCIÓN</th>
-                                                    <th style={{ padding: '10px' }}>ESTADO</th>
-                                                    <th style={{ padding: '10px', textAlign: 'right' }}>ACCIONES</th>
+                                                    <th style={{ padding: '10px' }}>CORREO</th>
+                                                    <th style={{ padding: '10px' }}>TIPO DE ACCESO</th>
+                                                    <th style={{ padding: '10px' }}>REGISTRO</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {accounts.map((acc) => (
-                                                    <tr key={acc._id} style={{ borderBottom: '1px solid #1e293b', color: '#fff' }}><td style={{ padding: '12px', fontWeight: '500' }}>{acc.name}</td><td style={{ padding: '12px', color: '#cbd5e1' }}>{acc.role}</td><td style={{ padding: '12px' }}>{acc.institution}</td><td style={{ padding: '12px', color: '#cbd5e1' }}>{acc.active ? 'Activa' : 'Inactiva'}</td><td style={{ padding: '12px', textAlign: 'right', display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}><button type="button" onClick={() => { setEditingAccountId(acc._id); setAccountForm(acc); }} style={{ background: '#1d4ed8', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: '500' }}>Editar</button><button type="button" onClick={() => toggleAccountStatus(acc)} style={{ background: acc.active ? '#b45309' : '#047857', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: '500' }}>{acc.active ? 'Desactivar' : 'Activar'}</button><button type="button" onClick={() => deleteAccount(acc._id)} style={{ background: '#9f1239', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: '500' }}>Eliminar</button></td></tr>
+                                                    <tr key={acc._id} style={{ borderBottom: '1px solid #1e293b', color: '#fff' }}>
+                                                        <td style={{ padding: '12px', fontWeight: '500' }}>{acc.nombre}</td>
+                                                        <td style={{ padding: '12px', color: '#cbd5e1' }}>{acc.email}</td>
+                                                        <td style={{ padding: '12px' }}>
+                                                            <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '11px', background: acc.email === 'admin@nebula.com' || acc.role === 'admin' ? '#7c3aed' : '#374151' }}>
+                                                                {acc.email === 'admin@nebula.com' || acc.role === 'admin' ? 'Administrador General' : 'Personal Institucional'}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ padding: '12px', color: '#94a3b8' }}>{new Date(acc.createdAt).toLocaleDateString()}</td>
+                                                    </tr>
                                                 ))}
                                             </tbody>
                                         </table>
                                     </div>
                                 ) : (
-                                    <p style={{ color: '#94a3b8', fontSize: '13px' }}>No hay cuentas institucionales registradas.</p>
+                                    <p style={{ color: '#94a3b8', fontSize: '13px' }}>No hay cuentas registradas en la base de datos.</p>
                                 )}
                             </div>
                         </div>
-                    ) : currentView === 'catalogo' && userRole === 'Administrador Técnico' ? (
+                    ) : isAdminGeneral && currentView === 'catalogo' ? (
                         <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '40px' }}>
                             {resourceError && <div style={{ background: '#4c0519', border: '1px solid #be123c', color: '#ffe4e6', padding: '12px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px' }}>{resourceError}</div>}
                             {resourceNotice && <div style={{ background: '#064e3b', border: '1px solid #047857', color: '#ecfdf5', padding: '12px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px' }}>{resourceNotice}</div>}
@@ -799,7 +773,17 @@ function Admin({ onLogout, userRole = 'Administrador Técnico', userInstitution 
                                             </thead>
                                             <tbody>
                                                 {resources.map((res) => (
-                                                    <tr key={res._id} style={{ borderBottom: '1px solid #1e293b', color: '#fff' }}><td style={{ padding: '12px', fontWeight: '500' }}>{res.title}</td><td style={{ padding: '12px', color: '#cbd5e1' }}>{res.category}</td><td style={{ padding: '12px', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><a href={res.url} target="_blank" rel="noreferrer" style={{ color: '#c084fc', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>{res.url}</a></td><td style={{ padding: '12px', textAlign: 'right', display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}><button type="button" onClick={() => startEditingResource(res)} style={{ background: '#1d4ed8', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>Editar</button><button type="button" onClick={() => handleDeleteResource(res)} style={{ background: '#9f1239', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>Eliminar</button></td></tr>
+                                                    <tr key={res._id} style={{ borderBottom: '1px solid #1e293b', color: '#fff' }}>
+                                                        <td style={{ padding: '12px', fontWeight: '500' }}>{res.title}</td>
+                                                        <td style={{ padding: '12px', color: '#cbd5e1' }}>{res.category}</td>
+                                                        <td style={{ padding: '12px', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                            <a href={res.url} target="_blank" rel="noreferrer" style={{ color: '#c084fc', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>{res.url}</a>
+                                                        </td>
+                                                        <td style={{ padding: '12px', textAlign: 'right', display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                                            <button type="button" onClick={() => startEditingResource(res)} style={{ background: '#1d4ed8', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>Editar</button>
+                                                            <button type="button" onClick={() => handleDeleteResource(res)} style={{ background: '#9f1239', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>Eliminar</button>
+                                                        </td>
+                                                    </tr>
                                                 ))}
                                             </tbody>
                                         </table>

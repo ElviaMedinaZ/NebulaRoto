@@ -15,7 +15,7 @@ function readCookie(req, name) {
   return cookie ? cookie.slice(name.length + 1) : null;
 }
 
-// Verifica firma, audiencia y rol del JWT antes de permitir acceso a rutas privadas.
+// Verifica firma, audiencia y sesión activa del JWT antes de permitir acceso a rutas privadas.
 function verificarToken(req, res, next) {
   const token = readCookie(req, COOKIE_NAME);
   const secret = process.env.JWT_SECRET || FALLBACK_JWT_SECRET;
@@ -32,13 +32,16 @@ function verificarToken(req, res, next) {
       issuer: "nebula-api",
       audience: "nebula-admin"
     });
-    if (payload.role !== "admin" || typeof payload.sub !== "string") {
+
+    // Permitir acceso a cualquier usuario autenticado válido (admin o institucional)
+    if (!payload || typeof payload.sub !== "string") {
       return res.status(403).json({ mensaje: "No tienes permiso para acceder." });
     }
 
-    req.admin = { id: payload.sub, email: payload.email };
+    // Inyecta los datos del usuario en la petición
+    req.admin = { id: payload.sub, email: payload.email, role: payload.role || "institucional" };
     return next();
-  } catch {
+  } catch (err) {
     res.clearCookie(COOKIE_NAME, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

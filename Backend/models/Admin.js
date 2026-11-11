@@ -22,6 +22,12 @@ const adminSchema = new mongoose.Schema({
     required: true,
     select: false
   },
+  role: {
+    type: String,
+    enum: ["admin", "institucional"],
+    default: "institucional",
+    required: true
+  },
   terminosAceptadosEn: {
     type: Date,
     required: true
