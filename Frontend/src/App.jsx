@@ -545,6 +545,12 @@ function App() {
 
 
 
+  // Identifica si estamos en la vista de administración o autenticación administrativa
+
+  const isAdminPage = ['admin', 'login-admin', 'signup-admin'].includes(activePage)
+
+
+
   // Confirma en el backend que la cookie corresponde a una sesión administrativa vigente.
 
   useEffect(() => {
@@ -980,60 +986,43 @@ function App() {
           return <main className="admin-session-loading" role="status">Verificando sesión administrativa…</main>
         }
         return isAdminAuthenticated
-          ? <AdminDashboard onLogout={handleAdminLogout} />  // <-- Cambiado a AdminDashboard
+          ? <AdminDashboard onLogout={handleAdminLogout} />
           : <LoginAdmin
               onBack={navigateHome}
               onSignup={() => navigateToPage('signup-admin')}
               onAuthenticated={completeAdminAuthentication}
               initialError={adminSessionError}
             />
-      // Enlaza los formularios de acceso y registro con la navegación y la sesión global.
 
       case 'login-admin':
-
         return (
-
           <LoginAdmin
-
             onBack={navigateHome}
-
             onSignup={() => navigateToPage('signup-admin')}
-
             onAuthenticated={completeAdminAuthentication}
-
             initialError={adminSessionError}
-
           />
-
         )
 
       case 'signup-admin':
-
         return (
-
           <SingUpAdmin
-
             onBack={navigateHome}
-
             onLogin={() => navigateToPage('login-admin')}
-
             onAuthenticated={completeAdminAuthentication}
-
             initialError={adminSessionError}
-
           />
 
         )
 
       case 'socios':
-
         return <Socios />
 
       case 'ia':
-
         return <IA />
 
       case 'home':
+        /* fallthrough */
 
       default:
 
@@ -1329,8 +1318,6 @@ function App() {
 
 
                 <div className="quick-actions-grid">
-
-                  {/* Recorre las acciones configuradas y cambia a la pantalla asociada al hacer clic. */}
 
                   {quickActions.map((action) => (
 
@@ -1714,201 +1701,275 @@ function App() {
 
     <div className="nebula-app" data-page={activePage} data-menu-open={isMobileMenuOpen} data-dialog-open={isReportModalOpen || isReportLookupOpen || isAssessmentModalOpen}>
 
-      {/* Encabezado persistente con navegación, reportes y acceso a IA. */}
+      {/* Se oculta el encabezado global en las páginas administrativas */}
 
-      <header className="header">
+      {!isAdminPage && (
 
-        <div className="container header-container">
+        <header className="header">
 
-          <a href="#inicio" className="logo" onClick={(e) => { e.preventDefault(); navigateHome() }} aria-label="Ir a la página principal">
+          <div className="container header-container">
 
-            <span className="logo-icon">
+            <a href="#inicio" className="logo" onClick={(e) => { e.preventDefault(); navigateHome() }} aria-label="Ir a la página principal">
 
-              <img src={logo} alt="Logo Nebula" />
+              <span className="logo-icon">
 
-            </span>
+                <img src={logo} alt="Logo Nebula" />
 
-            <span className="logo-text">NEBULA</span>
+              </span>
 
-          </a>
+              <span className="logo-text">NEBULA</span>
+
+            </a>
 
 
 
-          {/* Los eventos cancelan el ancla predeterminada para usar la navegación interna de React. */}
+            <nav className="nav" aria-label="Navegación principal">
 
-          <nav className="nav" aria-label="Navegación principal">
+              <a href="#inicio" className="nav-link" onClick={(e) => { e.preventDefault(); navigateHome() }}>Inicio</a>
 
-            <a href="#inicio" className="nav-link" onClick={(e) => { e.preventDefault(); navigateHome() }}>Inicio</a>
+              <a href="#pilares" className="nav-link" onClick={(e) => { e.preventDefault(); navigateToSection('pilares') }}>Pilares</a>
 
-            <a href="#pilares" className="nav-link" onClick={(e) => { e.preventDefault(); navigateToSection('pilares') }}>Pilares</a>
+              <a href="#servicios" className="nav-link" onClick={(e) => { e.preventDefault(); navigateToSection('servicios') }}>Recursos</a>
 
-            <a href="#servicios" className="nav-link" onClick={(e) => { e.preventDefault(); navigateToSection('servicios') }}>Recursos</a>
+              <a href="#socios" className="nav-link" onClick={(e) => { e.preventDefault(); navigateToPage('socios') }}>Socios</a>
 
-            <a href="#socios" className="nav-link" onClick={(e) => { e.preventDefault(); navigateToPage('socios') }}>Socios</a>
+              <button type="button" className="nav-link" onClick={openAssessment}>Autoevaluación</button>
 
-            <button type="button" className="nav-link" onClick={openAssessment}>Autoevaluación</button>
-
-            <a href="#login-admin" className="nav-link nav-admin-link" onClick={(e) => { e.preventDefault(); navigateToPage('login-admin') }}>Admin</a>
-
-            <button
-
-              type="button"
-
-              className="nav-link theme-toggle"
-
-              onClick={() => setIsDarkMode((currentMode) => !currentMode)}
-
-              aria-label={`Activar modo ${isDarkMode ? 'claro' : 'oscuro'}`}
-
-              aria-pressed={isDarkMode}
-
-              title={`Activar modo ${isDarkMode ? 'claro' : 'oscuro'}`}
-
-            >
-
-              <span aria-hidden="true">{isDarkMode ? '☀' : '☾'}</span>
-
-            </button>
-
-          </nav>
-
-          <button type="button" className="header-report-button" onClick={() => setIsReportModalOpen(true)}>
-
-            Reportar
-
-          </button>
-
-          {/* La salida y la navegación móvil se mantienen accesibles en el encabezado. */}
-          <a
-            className="mobile-quick-exit"
-            href={quickExitUrl}
-            onClick={(event) => {
-              event.preventDefault()
-              window.location.replace(quickExitUrl)
-            }}
-            aria-label="Salida rápida: abrir un sitio neutral"
-          >
-            Salir rápido
-          </a>
-          <button
-            ref={mobileMenuToggleRef}
-            type="button"
-            className="mobile-menu-toggle"
-            aria-expanded={isMobileMenuOpen}
-            aria-controls="nebula-mobile-navigation"
-            onClick={() => setIsMobileMenuOpen((open) => !open)}
-          >
-            <span aria-hidden="true">{isMobileMenuOpen ? '✕' : '☰'}</span>
-            <span>{isMobileMenuOpen ? 'Cerrar' : 'Menú'}</span>
-          </button>
-
-          {!['admin', 'login-admin', 'signup-admin', 'ia'].includes(activePage) && (
-
-            <div className="header-ai">
-
-              {aiMessage && (
-
-                <button
-
-                  type="button"
-
-                  className="ai-message"
-
-                  onClick={() => navigateToPage('ia')}
-
-                  aria-label={`Abrir IA: ${aiMessage}`}
-
-                  aria-live="polite"
-
-                >
-
-                  {aiMessage}
-
-                </button>
-
-              )}
+              <a href="#login-admin" className="nav-link nav-admin-link" onClick={(e) => { e.preventDefault(); navigateToPage('login-admin') }}>Admin</a>
 
               <button
 
                 type="button"
 
-                className="ai-evaluation-button"
+                className="nav-link theme-toggle"
 
-                onClick={() => navigateToPage('ia')}
+                onClick={() => setIsDarkMode((currentMode) => !currentMode)}
 
-                aria-label="Abrir evaluación de IA"
+                aria-label={`Activar modo ${isDarkMode ? 'claro' : 'oscuro'}`}
+
+                aria-pressed={isDarkMode}
+
+                title={`Activar modo ${isDarkMode ? 'claro' : 'oscuro'}`}
 
               >
 
-                <img
-
-                  src={isAiBlinking ? miImagenParpadeo : miImagen}
-
-                  alt="Evaluación de IA"
-
-                />
+                <span aria-hidden="true">{isDarkMode ? '☀' : '☾'}</span>
 
               </button>
 
+            </nav>
+
+            <button type="button" className="header-report-button" onClick={() => setIsReportModalOpen(true)}>
+
+              Reportar
+
+            </button>
+
+
+
+            <a
+
+              className="mobile-quick-exit"
+
+              href={quickExitUrl}
+
+              onClick={(event) => {
+
+                event.preventDefault()
+
+                window.location.replace(quickExitUrl)
+
+              }}
+
+              aria-label="Salida rápida: abrir un sitio neutral"
+
+            >
+
+              Salir rápido
+
+            </a>
+
+            <button
+
+              ref={mobileMenuToggleRef}
+
+              type="button"
+
+              className="mobile-menu-toggle"
+
+              aria-expanded={isMobileMenuOpen}
+
+              aria-controls="nebula-mobile-navigation"
+
+              onClick={() => setIsMobileMenuOpen((open) => !open)}
+
+            >
+
+              <span aria-hidden="true">{isMobileMenuOpen ? '✕' : '☰'}</span>
+
+              <span>{isMobileMenuOpen ? 'Cerrar' : 'Menú'}</span>
+
+            </button>
+
+
+
+            {!['admin', 'login-admin', 'signup-admin', 'ia'].includes(activePage) && (
+
+              <div className="header-ai">
+
+                {aiMessage && (
+
+                  <button
+
+                    type="button"
+
+                    className="ai-message"
+
+                    onClick={() => navigateToPage('ia')}
+
+                    aria-label={`Abrir IA: ${aiMessage}`}
+
+                    aria-live="polite"
+
+                  >
+
+                    {aiMessage}
+
+                  </button>
+
+                )}
+
+                <button
+
+                  type="button"
+
+                  className="ai-evaluation-button"
+
+                  onClick={() => navigateToPage('ia')}
+
+                  aria-label="Abrir evaluación de IA"
+
+                >
+
+                  <img
+
+                    src={isAiBlinking ? miImagenParpadeo : miImagen}
+
+                    alt="Evaluación de IA"
+
+                  />
+
+                </button>
+
+              </div>
+
+            )}
+
+          </div>
+
+
+
+          <nav
+
+            id="nebula-mobile-navigation"
+
+            ref={mobileNavigationRef}
+
+            className="mobile-nav"
+
+            aria-label="Navegación móvil"
+
+            hidden={!isMobileMenuOpen}
+
+          >
+
+            <div className="mobile-nav-inner">
+
+              <button type="button" className="mobile-nav-link" onClick={navigateHome}>Inicio</button>
+
+              <p className="mobile-nav-heading">Herramientas y ayuda</p>
+
+              <button type="button" className="mobile-nav-link" onClick={openAssessment}>Autoevaluación</button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('centros')}>Centros de ayuda</button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('linea')}>Líneas de escucha</button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('rutas')}>Recursos de orientación</button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('modulos')}>Chat global</button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('ia')}>Asistente Kara</button>
+
+              <p className="mobile-nav-heading">Reportes</p>
+
+              <button type="button" className="mobile-nav-link" onClick={() => { setIsMobileMenuOpen(false); setIsReportModalOpen(true) }}>Crear reporte anónimo</button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => { setIsMobileMenuOpen(false); setIsReportLookupOpen(true) }}>Consultar por folio</button>
+
+              <p className="mobile-nav-heading">Más opciones</p>
+
+              <button type="button" className="mobile-nav-link" onClick={() => navigateToSection('pilares')}>Nuestros pilares</button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => navigateToSection('nosotros')}>Conocer Nebula</button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('socios')}>Socios</button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => { setIsDarkMode((dark) => !dark); setIsMobileMenuOpen(false) }}>
+
+                Cambiar a modo {isDarkMode ? 'claro' : 'oscuro'}
+
+              </button>
+
+              <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('login-admin')}>Administración</button>
+
             </div>
 
-          )}
+          </nav>
 
-        </div>
+        </header>
 
-        {/* La navegación de escritorio permanece intacta; esta versión solo aparece en móvil. */}
-        <nav
-          id="nebula-mobile-navigation"
-          ref={mobileNavigationRef}
-          className="mobile-nav"
-          aria-label="Navegación móvil"
-          hidden={!isMobileMenuOpen}
-        >
-          <div className="mobile-nav-inner">
-            <button type="button" className="mobile-nav-link" onClick={navigateHome}>Inicio</button>
-            <p className="mobile-nav-heading">Herramientas y ayuda</p>
-            <button type="button" className="mobile-nav-link" onClick={openAssessment}>Autoevaluación</button>
-            <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('centros')}>Centros de ayuda</button>
-            <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('linea')}>Líneas de escucha</button>
-            <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('rutas')}>Recursos de orientación</button>
-            <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('modulos')}>Chat global</button>
-            <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('ia')}>Asistente Kara</button>
-            <p className="mobile-nav-heading">Reportes</p>
-            <button type="button" className="mobile-nav-link" onClick={() => { setIsMobileMenuOpen(false); setIsReportModalOpen(true) }}>Crear reporte anónimo</button>
-            <button type="button" className="mobile-nav-link" onClick={() => { setIsMobileMenuOpen(false); setIsReportLookupOpen(true) }}>Consultar por folio</button>
-            <p className="mobile-nav-heading">Más opciones</p>
-            <button type="button" className="mobile-nav-link" onClick={() => navigateToSection('pilares')}>Nuestros pilares</button>
-            <button type="button" className="mobile-nav-link" onClick={() => navigateToSection('nosotros')}>Conocer Nebula</button>
-            <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('socios')}>Socios</button>
-            <button type="button" className="mobile-nav-link" onClick={() => { setIsDarkMode((dark) => !dark); setIsMobileMenuOpen(false) }}>
-              Cambiar a modo {isDarkMode ? 'claro' : 'oscuro'}
-            </button>
-            <button type="button" className="mobile-nav-link" onClick={() => navigateToPage('login-admin')}>Administración</button>
-          </div>
-        </nav>
+      )}
 
-      </header>
+
 
       {isMobileMenuOpen && (
+
         <button
+
           type="button"
+
           className="mobile-menu-scrim"
+
           aria-label="Cerrar menú de navegación"
+
           tabIndex={-1}
+
           onClick={() => {
+
             setIsMobileMenuOpen(false)
+
             mobileMenuToggleRef.current?.focus()
+
           }}
+
         />
+
       )}
+
+
 
       <main id="nebula-main-content">{renderPage()}</main>
 
-      {/* Los modales se montan únicamente mientras su estado de apertura sea verdadero. */}
+
 
       {isReportModalOpen && <ReporteModal onClose={() => setIsReportModalOpen(false)} />}
 
+
+
       {isReportLookupOpen && <ConsultaReporteModal onClose={() => setIsReportLookupOpen(false)} />}
+
+
 
       {isAssessmentModalOpen && (
 
@@ -1930,116 +1991,124 @@ function App() {
 
 
 
-      {/* Enlaces a recursos frecuentes y datos de contacto y emergencia. */}
+      {/* Se oculta el footer global en las páginas administrativas */}
 
-      <footer className="footer">
+      {!isAdminPage && (
 
-        <div className="container footer-grid">
+        <footer className="footer">
 
-          <div className="footer-col">
+          <div className="container footer-grid">
 
-            <h3>
+            <div className="footer-col">
 
-              <img src={logo} alt="Logo Nebula" className="footer-logo-icon" />
+              <h3>
 
-              <span>NEBULA</span>
+                <img src={logo} alt="Logo Nebula" className="footer-logo-icon" />
 
-            </h3>
+                <span>NEBULA</span>
 
-            <p>Sistema de prevención, concientización y apoyo contra la violencia hacia la mujer.</p>
+              </h3>
+
+              <p>Sistema de prevención, concientización y apoyo contra la violencia hacia la mujer.</p>
+
+            </div>
+
+            <div className="footer-col">
+
+              <h4>Secciones</h4>
+
+              <ul>
+
+                <li><a href="#inicio" onClick={(e) => { e.preventDefault(); navigateToSection('inicio') }}>Inicio</a></li>
+
+                <li><a href="#pilares" onClick={(e) => { e.preventDefault(); navigateToSection('pilares') }}>Pilares</a></li>
+
+                <li><a href="#nosotros" onClick={(e) => { e.preventDefault(); navigateToSection('nosotros') }}>Sobre el Proyecto</a></li>
+
+                <li><a href="#servicios" onClick={(e) => { e.preventDefault(); navigateToSection('servicios') }}>Servicios</a></li>
+
+              </ul>
+
+            </div>
+
+            <div className="footer-col">
+
+              <h4>Recursos Útiles</h4>
+
+              <ul>
+
+                <li><a href="#centros" onClick={(e) => { e.preventDefault(); navigateToPage('centros') }}>Centros de Atención</a></li>
+
+                <li><a href="#rutas" onClick={(e) => { e.preventDefault(); navigateToPage('rutas') }}>Recursos de orientacion</a></li>
+
+                <li><a href="#linea" onClick={(e) => { e.preventDefault(); navigateToPage('linea') }}>Líneas de Emergencia</a></li>
+
+              </ul>
+
+            </div>
+
+            <div className="footer-col">
+
+              <h4>Emergencias</h4>
+
+              <ul>
+
+                <li><a href="tel:911">Emergencias Nacionales: 911</a></li>
+
+                <li><a href="tel:075">Línea Mujeres: 075</a></li>
+
+              </ul>
+
+            </div>
 
           </div>
 
-          <div className="footer-col">
+          <div className="footer-bottom">
 
-            <h4>Secciones</h4>
-
-            {/* Los enlaces del pie reutilizan la navegación a secciones de la portada. */}
-
-            <ul>
-
-              <li><a href="#inicio" onClick={(e) => { e.preventDefault(); navigateToSection('inicio') }}>Inicio</a></li>
-
-              <li><a href="#pilares" onClick={(e) => { e.preventDefault(); navigateToSection('pilares') }}>Pilares</a></li>
-
-              <li><a href="#nosotros" onClick={(e) => { e.preventDefault(); navigateToSection('nosotros') }}>Sobre el Proyecto</a></li>
-
-              <li><a href="#servicios" onClick={(e) => { e.preventDefault(); navigateToSection('servicios') }}>Servicios</a></li>
-
-            </ul>
+            <p>&copy; 2026 Nebula Project. Todos los derechos reservados. Espacio seguro y confidencial.</p>
 
           </div>
 
-          <div className="footer-col">
+        </footer>
 
-            <h4>Recursos Útiles</h4>
-
-            {/* Estos controladores abren directamente cada pantalla de recursos. */}
-
-            <ul>
-
-              <li><a href="#centros" onClick={(e) => { e.preventDefault(); navigateToPage('centros') }}>Centros de Atención</a></li>
-
-              <li><a href="#rutas" onClick={(e) => { e.preventDefault(); navigateToPage('rutas') }}>Recursos de orientacion</a></li>
-
-              <li><a href="#linea" onClick={(e) => { e.preventDefault(); navigateToPage('linea') }}>Líneas de Emergencia</a></li>
-
-            </ul>
-
-          </div>
-
-          <div className="footer-col">
-
-            <h4>Emergencias</h4>
-
-            <ul>
-
-              <li><a href="tel:911">Emergencias Nacionales: 911</a></li>
-
-              <li><a href="tel:075">Línea Mujeres: 075</a></li>
-
-            </ul>
-
-          </div>
-
-        </div>
-
-        <div className="footer-bottom">
-
-          <p>&copy; 2026 Nebula Project. Todos los derechos reservados. Espacio seguro y confidencial.</p>
-
-        </div>
-
-      </footer>
+      )}
 
 
 
-      {/* Acceso fijo de salida rápida configurado como botón de pánico. */}
+      {/* Se oculta el botón flotante de salida rápida/pánico en las páginas administrativas */}
 
-      <a
+      {!isAdminPage && (
 
-        className="panic-button"
+        <a
 
-        href={quickExitUrl}
+          className="panic-button"
 
-        onClick={(event) => {
-          event.preventDefault()
-          window.location.replace(quickExitUrl)
-        }}
+          href={quickExitUrl}
 
-        aria-label="Salida rápida: abrir un sitio neutral"
+          onClick={(event) => {
 
-      >
+            event.preventDefault()
 
-        <span className="panic-icon">🚨</span>
+            window.location.replace(quickExitUrl)
 
-        <span className="panic-text">SALIR</span>
+          }}
 
-      </a>
+          aria-label="Salida rápida: abrir un sitio neutral"
+
+        >
+
+          <span className="panic-icon">🚨</span>
+
+          <span className="panic-text">SALIR</span>
+
+        </a>
+
+      )}
 
     </div>
 
   )
 
 }
+
 export default App
